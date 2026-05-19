@@ -15,7 +15,7 @@
     "@fullcalendar/interaction": "^6.1.20",
     "@fullcalendar/react": "^6.1.20",
     "@fullcalendar/timegrid": "^6.1.20",
-    "@supabase/supabase-js": "^2.105.4",
+    "@supabase/supabase-js": "^2.106.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.16.0",
     "react": "^19.2.6",

@@ -10,6 +10,10 @@ import TaskFormModal from './components/TaskFormModal';
 import QuickStats from './components/QuickStats';
 import Sidebar from './components/Sidebar';
 import CalendarView from './components/CalendarView';
+import { supabase } from './services/supabase';
+import Auth from './components/Auth';
+import { loadTasksFromCloud, loadTagsFromCloud, syncTasksToCloud, syncTagsToCloud } from './services/syncService';
+import UserMenu from './components/UserMenu';
 
 function App() {
   const { 
@@ -30,9 +34,13 @@ function App() {
     permanentDeleteTask,
     emptyTrash,
     archiveSettings,
-    updateArchiveSettings
+    updateArchiveSettings,
+    setTasks,
+    setTags
   } = useTaskStore();
   
+  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [useRegex, setUseRegex] = useState(false);
@@ -51,6 +59,49 @@ function App() {
   const activeTasks = tasks.filter(t => !t.archived && !t.deleted);
   const archivedTasks = tasks.filter(t => t.archived && !t.deleted);
   const trashedTasks = tasks.filter(t => t.deleted);
+
+  // 检查登录状态并加载数据
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+      if (session) {
+        loadUserData(session.user.id);
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+        loadUserData(session.user.id);
+      }
+    });
+
+    return () => listener?.subscription.unsubscribe();
+  }, []);
+
+  // 加载用户数据
+  const loadUserData = async (userId: string) => {
+    try {
+      const [cloudTasks, cloudTags] = await Promise.all([
+        loadTasksFromCloud(userId),
+        loadTagsFromCloud(userId),
+      ]);
+      
+      if (cloudTasks.length > 0) setTasks(cloudTasks);
+      if (cloudTags.length > 0) setTags(cloudTags);
+    } catch (error) {
+      console.error('加载云端数据失败:', error);
+    }
+  };
+
+  // 自动同步到云端
+  useEffect(() => {
+    if (session?.user) {
+      syncTasksToCloud(session.user.id, tasks);
+      syncTagsToCloud(session.user.id, tags);
+    }
+  }, [tasks, tags, session]);
 
   // 初始化主题
   useEffect(() => {
@@ -260,7 +311,6 @@ function App() {
   // 归档中的删除操作（移到回收站）
   const handleDeleteFromArchive = (taskId: string) => {
     deleteTask(taskId);
-    
   };
 
   // 回收站中的恢复操作
@@ -322,6 +372,23 @@ function App() {
   const handleAutoArchiveToggle = () => {
     updateArchiveSettings({ enabled: !archiveSettings.enabled });
   };
+
+  // 如果正在加载，显示加载中
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900">
+        <div className="text-center">
+          <div className="text-5xl mb-4 animate-bounce">🐟</div>
+          <p className="text-zinc-500 dark:text-zinc-400">加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 未登录显示登录页
+  if (!session) {
+    return <Auth onAuthSuccess={() => {}} />;
+  }
 
   // ========== 回收站视图 ==========
   if (showTrash) {
@@ -684,8 +751,10 @@ function App() {
   // ========== 主视图 ==========
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900 transition-colors duration-300">
+      {/* App.tsx 主视图部分 */}
       <header className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-200 dark:border-zinc-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+          {/* 左侧：菜单按钮 + Logo */}
           <div className="flex items-center gap-3">
             <button
               onClick={toggleSidebar}
@@ -699,6 +768,7 @@ function App() {
             </div>
           </div>
 
+          {/* 中间：搜索框 */}
           <div className="flex-1 max-w-md relative">
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input
@@ -724,6 +794,7 @@ function App() {
             </button>
           </div>
 
+          {/* 右侧：主题切换 + 新建任务 + 用户菜单 */}
           <div className="flex items-center gap-2">
             <button
               onClick={toggleTheme}
@@ -738,6 +809,7 @@ function App() {
               <Plus size={18} />
               <span className="hidden sm:inline">新建任务</span>
             </button>
+            <UserMenu />
           </div>
         </div>
         {regexError && (
@@ -814,8 +886,8 @@ function App() {
                 <QuickStats
                   filterStatus={filterStatus}
                   setFilterStatus={setFilterStatus}
-                  filterPriority={filterPriority}      // 添加
-                  setFilterPriority={setFilterPriority} // 添加
+                  filterPriority={filterPriority}
+                  setFilterPriority={setFilterPriority}
                   dateFilter={dateFilter}
                   setDateFilter={setDateFilter}
                   tasks={activeTasks}

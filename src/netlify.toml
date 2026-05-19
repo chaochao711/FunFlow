@@ -1,0 +1,10 @@
+# netlify.toml
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Content-Type = "application/javascript"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Type = "text/html"

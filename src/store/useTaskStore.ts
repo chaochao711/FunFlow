@@ -52,21 +52,21 @@ interface TaskStore {
   sidebarOpen: boolean;
   selectedTaskId: string | null;
   showArchived: boolean;
-  showTrash: boolean;  // 新增：是否显示回收站
+  showTrash: boolean;
   archiveSettings: ArchiveSettings;
   
   // Task Actions
   addTask: (task: Task) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
-  deleteTask: (id: string) => void;  // 移到回收站
-  permanentDeleteTask: (id: string) => void;  // 彻底删除
-  restoreTask: (id: string) => void;  // 从回收站恢复
-  emptyTrash: () => void;  // 清空回收站
+  deleteTask: (id: string) => void;
+  permanentDeleteTask: (id: string) => void;
+  restoreTask: (id: string) => void;
   archiveTask: (id: string) => void;
   unarchiveTask: (id: string) => void;
   autoArchiveTasks: () => void;
   addHistory: (taskId: string, field: string, oldValue: any, newValue: any) => void;
   restoreVersion: (taskId: string, historyId: string) => void;
+  emptyTrash: () => void;  // 新增：清空回收站
   
   // Tag Actions
   addTag: (tag: Tag) => void;
@@ -80,6 +80,10 @@ interface TaskStore {
   setShowArchived: (show: boolean) => void;
   setShowTrash: (show: boolean) => void;
   updateArchiveSettings: (settings: Partial<ArchiveSettings>) => void;
+  
+  // 云同步
+  setTasks: (tasks: Task[]) => void;
+  setTags: (tags: Tag[]) => void;
 }
 
 const defaultTags: Tag[] = [
@@ -130,23 +134,20 @@ export const useTaskStore = create<TaskStore>()(
           };
         }),
       
-      // 删除任务：移到回收站（软删除）
       deleteTask: (id) =>
         set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
-              ? { ...task, deleted: true, deletedAt: new Date().toISOString(), archived: false }
+              ? { ...task, deleted: true, deletedAt: new Date().toISOString() }
               : task
           ),
         })),
       
-      // 彻底删除
       permanentDeleteTask: (id) =>
         set((state) => ({
           tasks: state.tasks.filter((task) => task.id !== id),
         })),
       
-      // 从回收站恢复
       restoreTask: (id) =>
         set((state) => ({
           tasks: state.tasks.map((task) =>
@@ -156,18 +157,11 @@ export const useTaskStore = create<TaskStore>()(
           ),
         })),
       
-      // 清空回收站
-      emptyTrash: () =>
-        set((state) => ({
-          tasks: state.tasks.filter((task) => !task.deleted),
-        })),
-      
-      // 归档任务（同时清除删除状态）
       archiveTask: (id) =>
         set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
-              ? { ...task, archived: true, archivedAt: new Date().toISOString(), deleted: false, deletedAt: undefined }
+              ? { ...task, archived: true, archivedAt: new Date().toISOString() }
               : task
           ),
         })),
@@ -239,6 +233,12 @@ export const useTaskStore = create<TaskStore>()(
           };
         }),
       
+      // 清空回收站
+      emptyTrash: () =>
+        set((state) => ({
+          tasks: state.tasks.filter((task) => !task.deleted),
+        })),
+      
       // ========== Tag Actions ==========
       
       addTag: (tag) =>
@@ -260,12 +260,8 @@ export const useTaskStore = create<TaskStore>()(
           })),
         })),
       
-      
       moveTag: (dragId, targetId, position) =>
         set((state) => {
-          // 防止拖拽到自己
-          if (dragId === targetId) return state;
-          
           const dragIndex = state.tags.findIndex(t => t.id === dragId);
           const targetIndex = state.tags.findIndex(t => t.id === targetId);
           
@@ -273,20 +269,8 @@ export const useTaskStore = create<TaskStore>()(
           
           const dragTag = { ...state.tags[dragIndex] };
           const targetTag = state.tags[targetIndex];
-          
-          // 防止将父标签拖入子标签（循环引用）
-          const isDescendant = (parentId: string | null, childId: string): boolean => {
-            if (!parentId) return false;
-            if (parentId === childId) return true;
-            const parent = state.tags.find(t => t.id === parentId);
-            return parent ? isDescendant(parent.parentId, childId) : false;
-          };
-          
-          if (position === 'inside' && isDescendant(dragTag.id, targetTag.id)) {
-            return state;
-          }
-          
           let newTags = [...state.tags];
+          
           newTags.splice(dragIndex, 1);
           let newTargetIndex = newTags.findIndex(t => t.id === targetId);
           
@@ -336,6 +320,11 @@ export const useTaskStore = create<TaskStore>()(
         set((state) => ({
           archiveSettings: { ...state.archiveSettings, ...settings }
         })),
+      
+      // ========== 云同步 Actions ==========
+      
+      setTasks: (tasks) => set({ tasks }),
+      setTags: (tags) => set({ tags }),
     }),
     {
       name: 'funflow-storage',
