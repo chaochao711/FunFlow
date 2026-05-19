@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Plus, Search, Menu, Sun, Moon, Sparkles, Filter, X, Archive, Trash2, ArrowLeft, Settings, RotateCcw, AlertTriangle, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useTaskStore } from './store/useTaskStore';
 import TaskCard from './components/TaskCard';
 import TaskDetailDrawer from './components/TaskDetailDrawer';
 import TaskFormModal from './components/TaskFormModal';
@@ -14,6 +13,7 @@ import { supabase } from './services/supabase';
 import Auth from './components/Auth';
 import { loadTasksFromCloud, loadTagsFromCloud, syncTasksToCloud, syncTagsToCloud } from './services/syncService';
 import UserMenu from './components/UserMenu';
+import { useTaskStore, Tag } from './store/useTaskStore';
 
 function App() {
   const { 
@@ -88,8 +88,30 @@ function App() {
         loadTagsFromCloud(userId),
       ]);
       
-      if (cloudTasks.length > 0) setTasks(cloudTasks);
-      if (cloudTags.length > 0) setTags(cloudTags);
+      // 加载任务
+      if (cloudTasks.length > 0) {
+        setTasks(cloudTasks);
+      }
+      
+      // 处理标签
+      if (cloudTags.length > 0) {
+        // 数据库有标签，直接加载
+        setTags(cloudTags);
+      } else {
+        // 数据库没有标签，创建默认标签
+        // 修复后的代码
+        const defaultTags: Tag[] = [
+          { id: 'work', name: '工作', parentId: null, colorType: 'emoji' as const, emoji: '💼', level: 0, order: 0 },
+          { id: 'personal', name: '个人', parentId: null, colorType: 'emoji' as const, emoji: '🏠', level: 0, order: 1 },
+          { id: 'study', name: '学习', parentId: null, colorType: 'emoji' as const, emoji: '📚', level: 0, order: 2 },
+          { id: 'health', name: '健康', parentId: null, colorType: 'emoji' as const, emoji: '💪', level: 0, order: 3 },
+        ];
+        
+        // 同步到云端
+        await syncTagsToCloud(userId, defaultTags);
+        // 加载到本地
+        setTags(defaultTags);
+      }
     } catch (error) {
       console.error('加载云端数据失败:', error);
     }

@@ -99,7 +99,7 @@ export const useTaskStore = create<TaskStore>()(
   persist(
     (set, get) => ({
       tasks: [],
-      tags: defaultTags,
+      tags:  [],
       sidebarOpen: true,
       selectedTaskId: null,
       showArchived: false,

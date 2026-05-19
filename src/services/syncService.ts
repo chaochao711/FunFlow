@@ -61,22 +61,20 @@ export async function loadTasksFromCloud(userId: string) {
 
 // 同步标签到云端
 export async function syncTagsToCloud(userId: string, tags: Tag[]) {
-  const tagsData = tags.map(tag => ({
-    user_id: userId,
-    tag_id: tag.id,
-    name: tag.name,
-    parent_id: tag.parentId,
-    color_type: tag.colorType,
-    emoji: tag.emoji,
-    color: tag.color,
-    level: tag.level,
-    order: tag.order,
-  }));
-
-  for (const tagData of tagsData) {
+  for (const tag of tags) {
     await supabase
       .from('tags')
-      .upsert(tagData, { onConflict: 'user_id, tag_id' });
+      .upsert({
+        user_id: userId,
+        tag_id: tag.id,
+        name: tag.name,
+        parent_id: tag.parentId,
+        color_type: tag.colorType,
+        emoji: tag.emoji,
+        color: tag.color,
+        level: tag.level,
+        order: tag.order,
+      }, { onConflict: 'user_id, tag_id' });
   }
 }
 
