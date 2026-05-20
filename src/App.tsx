@@ -92,7 +92,8 @@ function App() {
       setTags(cloudTags);
       
       // 关键修复：清除可能失效的选中标签
-      setSelectedTags([]);   
+      setSelectedTags([]);
+      const finalTags = recoverInvalidTags(cloudTasks, cloudTags);
 
     } catch (err) {
       console.error('加载云端数据失败:', err);

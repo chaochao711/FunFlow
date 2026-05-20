@@ -4,36 +4,40 @@ import { Task, Tag } from '../store/useTaskStore';
 export function recoverInvalidTags(tasks: Task[], existingTags: Tag[]): Tag[] {
   const existingTagIds = new Set(existingTags.map(t => t.id));
 
-  // 收集所有任务中出现的 tagId
+  // 收集任务中所有用到的标签ID
   const allUsedTagIds = new Set<string>();
+  
   tasks.forEach(task => {
-    (task.tags || []).forEach(tagId => {
+    (task.tags || []).forEach(tagItem => {
+      const tagId = typeof tagItem === 'string' 
+        ? tagItem 
+        : (tagItem as any)?.id;
+      
       if (typeof tagId === 'string' && tagId.trim() !== '') {
         allUsedTagIds.add(tagId);
       }
     });
   });
 
-  // 找出需要恢复的脏标签
   const missingTagIds = Array.from(allUsedTagIds).filter(id => !existingTagIds.has(id));
 
   if (missingTagIds.length === 0) {
     return existingTags;
   }
 
-  // 为每个缺失的标签创建一个基础 Tag 对象
+  // 恢复脏标签（尽量保持和正常标签一致的结构）
   const recoveredTags: Tag[] = missingTagIds.map((id, index) => ({
     id,
-    name: id,                    // 默认名称，用户可后续修改
+    name: id,
     parentId: null,
-    colorType: "emoji",          // ✅ 修复：必须是 "emoji" 或 "color"
-    emoji: '📌',                 // 默认表情
-    color: '#64748b',
+    colorType: "emoji" as const,
+    emoji: '❓',
+    color: '#ef4444',
     level: 0,
-    order: 9999 + index,         // 排到列表最后
-  }));
+    order: 9999 + index,
+  } as Tag));
 
-  console.log(`[Recover] 已从任务中恢复 ${recoveredTags.length} 个脏标签`, recoveredTags);
+  console.log(`[Recover] 已恢复 ${recoveredTags.length} 个脏标签`, recoveredTags);
 
   return [...existingTags, ...recoveredTags];
 }
