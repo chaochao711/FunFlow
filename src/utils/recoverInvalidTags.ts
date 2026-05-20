@@ -24,13 +24,13 @@ export function recoverInvalidTags(tasks: Task[], existingTags: Tag[]): Tag[] {
   // 为每个缺失的标签创建一个基础 Tag 对象
   const recoveredTags: Tag[] = missingTagIds.map((id, index) => ({
     id,
-    name: id,                    // 默认名称为 id（用户可后续修改）
+    name: id,                    // 默认名称，用户可后续修改
     parentId: null,
-    colorType: 'default',
+    colorType: "emoji",          // ✅ 修复：必须是 "emoji" 或 "color"
     emoji: '📌',                 // 默认表情
     color: '#64748b',
     level: 0,
-    order: 9999 + index,         // 排到最后
+    order: 9999 + index,         // 排到列表最后
   }));
 
   console.log(`[Recover] 已从任务中恢复 ${recoveredTags.length} 个脏标签`, recoveredTags);
