@@ -46,3 +46,15 @@ html.dark ::-webkit-scrollbar-thumb {
   background: #52525b;
 }
 
+html {
+  overflow-y: scroll;           /* 始终保留滚动条位置 */
+}
+
+body {
+  scrollbar-gutter: stable;     /* 现代浏览器最佳方案 */
+}
+
+/* 可选：主内容最小高度，防止高度突变抖动 */
+.main-content {
+  min-height: calc(100vh - 4rem); /* 请根据你顶部导航实际高度调整 */
+}

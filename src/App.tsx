@@ -80,49 +80,42 @@ function App() {
     return () => listener?.subscription.unsubscribe();
   }, []);
 
-  // 加载用户数据
+  // 在 loadUserData 或类似函数中
   const loadUserData = async (userId: string) => {
     try {
       const [cloudTasks, cloudTags] = await Promise.all([
         loadTasksFromCloud(userId),
-        loadTagsFromCloud(userId),
+        loadTagsFromCloud(userId)
       ]);
       
-      // 加载任务
-      if (cloudTasks.length > 0) {
-        setTasks(cloudTasks);
-      }
+      setTasks(cloudTasks);
+      setTags(cloudTags);
       
-      // 处理标签
-      if (cloudTags.length > 0) {
-        // 数据库有标签，直接加载
-        setTags(cloudTags);
-      } else {
-        // 数据库没有标签，创建默认标签
-        // 修复后的代码
-        const defaultTags: Tag[] = [
-          { id: 'work', name: '工作', parentId: null, colorType: 'emoji' as const, emoji: '💼', level: 0, order: 0 },
-          { id: 'personal', name: '个人', parentId: null, colorType: 'emoji' as const, emoji: '🏠', level: 0, order: 1 },
-          { id: 'study', name: '学习', parentId: null, colorType: 'emoji' as const, emoji: '📚', level: 0, order: 2 },
-          { id: 'health', name: '健康', parentId: null, colorType: 'emoji' as const, emoji: '💪', level: 0, order: 3 },
-        ];
-        
-        // 同步到云端
-        await syncTagsToCloud(userId, defaultTags);
-        // 加载到本地
-        setTags(defaultTags);
-      }
-    } catch (error) {
-      console.error('加载云端数据失败:', error);
+      // 关键修复：清除可能失效的选中标签
+      setSelectedTags([]);   
+
+    } catch (err) {
+      console.error('加载云端数据失败:', err);
     }
   };
 
-  // 自动同步到云端
+  // 同步到云端（建议加上防抖）
   useEffect(() => {
-    if (session?.user) {
-      syncTasksToCloud(session.user.id, tasks);
-      syncTagsToCloud(session.user.id, tags);
-    }
+    if (!session?.user?.id) return;
+
+    const syncData = async () => {
+      try {
+        await Promise.all([
+          syncTasksToCloud(session.user.id, tasks),
+          syncTagsToCloud(session.user.id, tags)
+        ]);
+      } catch (err) {
+        console.error('同步失败:', err);
+      }
+    };
+
+    const timer = setTimeout(syncData, 800); // 轻微防抖
+    return () => clearTimeout(timer);
   }, [tasks, tags, session]);
 
   // 初始化主题

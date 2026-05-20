@@ -1,9 +1,11 @@
 // src/services/syncService.ts
 import { supabase } from './supabase';
-import { useTaskStore, Task, Tag } from '../store/useTaskStore';
+import { Task, Tag } from '../store/useTaskStore';
 
-// 同步任务到云端
+// ==================== TASKS ====================
 export async function syncTasksToCloud(userId: string, tasks: Task[]) {
+  if (!userId || !tasks?.length) return;
+
   const tasksData = tasks.map(task => ({
     user_id: userId,
     task_id: task.id,
@@ -23,16 +25,16 @@ export async function syncTasksToCloud(userId: string, tasks: Task[]) {
     history: task.history,
   }));
 
-  // 使用 upsert 避免重复
-  for (const taskData of tasksData) {
-    await supabase
-      .from('tasks')
-      .upsert(taskData, { onConflict: 'user_id, task_id' });
-  }
+  const { error } = await supabase
+    .from('tasks')
+    .upsert(tasksData, { onConflict: 'user_id,task_id' });
+
+  if (error) throw error;
 }
 
-// 从云端加载任务
-export async function loadTasksFromCloud(userId: string) {
+export async function loadTasksFromCloud(userId: string): Promise<Task[]> {
+  if (!userId) return [];
+
   const { data, error } = await supabase
     .from('tasks')
     .select('*')
@@ -40,7 +42,7 @@ export async function loadTasksFromCloud(userId: string) {
 
   if (error) throw error;
 
-  return data.map(item => ({
+  return (data || []).map(item => ({
     id: item.task_id,
     title: item.title,
     description: item.description,
@@ -59,35 +61,62 @@ export async function loadTasksFromCloud(userId: string) {
   }));
 }
 
-// 同步标签到云端
+// ==================== TAGS ====================
 export async function syncTagsToCloud(userId: string, tags: Tag[]) {
-  for (const tag of tags) {
+  if (!userId) return;
+
+  // 1. 获取云端已有标签
+  const { data: dbTags } = await supabase
+    .from('tags')
+    .select('tag_id')
+    .eq('user_id', userId);
+
+  const dbIds = new Set(dbTags?.map(t => t.tag_id) || []);
+  const currentIds = new Set(tags.map(t => t.id));
+
+  // 2. 删除云端多余的标签（防止脏数据）
+  const toDelete = Array.from(dbIds).filter(id => !currentIds.has(id));
+  if (toDelete.length > 0) {
     await supabase
       .from('tags')
-      .upsert({
-        user_id: userId,
-        tag_id: tag.id,
-        name: tag.name,
-        parent_id: tag.parentId,
-        color_type: tag.colorType,
-        emoji: tag.emoji,
-        color: tag.color,
-        level: tag.level,
-        order: tag.order,
-      }, { onConflict: 'user_id, tag_id' });
+      .delete()
+      .eq('user_id', userId)
+      .in('tag_id', toDelete);
   }
+
+  // 3. 批量 upsert 当前标签
+  const tagsData = tags.map(tag => ({
+    user_id: userId,
+    tag_id: tag.id,
+    name: tag.name,
+    parent_id: tag.parentId,
+    color_type: tag.colorType,
+    emoji: tag.emoji,
+    color: tag.color,
+    level: tag.level,
+    order: tag.order,
+  }));
+
+  const { error } = await supabase
+    .from('tags')
+    .upsert(tagsData, { onConflict: 'user_id,tag_id' });
+
+  if (error) throw error;
 }
 
-// 从云端加载标签
-export async function loadTagsFromCloud(userId: string) {
+export async function loadTagsFromCloud(userId: string): Promise<Tag[]> {
+  if (!userId) return [];
+
   const { data, error } = await supabase
     .from('tags')
     .select('*')
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .order('level', { ascending: true })
+    .order('order', { ascending: true });
 
   if (error) throw error;
 
-  return data.map(item => ({
+  return (data || []).map(item => ({
     id: item.tag_id,
     name: item.name,
     parentId: item.parent_id,

@@ -86,6 +86,14 @@ interface TaskStore {
   setTags: (tags: Tag[]) => void;
 }
 
+const defaultTags: Tag[] = [
+  { id: 'work', name: '工作', parentId: null, colorType: 'emoji', emoji: '💼', level: 0, order: 0 },
+  { id: 'work-dev', name: '开发', parentId: 'work', colorType: 'emoji', emoji: '💻', level: 1, order: 0 },
+  { id: 'work-meeting', name: '会议', parentId: 'work', colorType: 'emoji', emoji: '📅', level: 1, order: 1 },
+  { id: 'personal', name: '个人', parentId: null, colorType: 'emoji', emoji: '🏠', level: 0, order: 1 },
+  { id: 'study', name: '学习', parentId: null, colorType: 'emoji', emoji: '📚', level: 0, order: 2 },
+  { id: 'health', name: '健康', parentId: null, colorType: 'emoji', emoji: '💪', level: 0, order: 3 },
+];
 
 export const useTaskStore = create<TaskStore>()(
   persist(
