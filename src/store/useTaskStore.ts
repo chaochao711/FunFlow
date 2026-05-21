@@ -56,6 +56,7 @@ interface TaskStore {
   archiveSettings: ArchiveSettings;
   
   // Task Actions
+  restoreToArchive: (id: string) => void;
   addTask: (task: Task) => void;
   updateTask: (id: string, updates: Partial<Task>) => void;
   deleteTask: (id: string) => void;
@@ -260,6 +261,21 @@ export const useTaskStore = create<TaskStore>()(
           })),
         })),
       
+      restoreToArchive: (id) =>
+        set((state) => ({
+          tasks: state.tasks.map((task) =>
+            task.id === id
+              ? { 
+                  ...task, 
+                  deleted: false, 
+                  deletedAt: undefined,
+                  archived: true,
+                  archivedAt: new Date().toISOString()
+                }
+              : task
+          ),
+        })),
+
       moveTag: (dragId, targetId, position) =>
         set((state) => {
           const dragIndex = state.tags.findIndex(t => t.id === dragId);

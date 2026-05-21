@@ -14,6 +14,7 @@ import Auth from './components/Auth';
 import { loadTasksFromCloud, loadTagsFromCloud, syncTasksToCloud, syncTagsToCloud } from './services/syncService';
 import UserMenu from './components/UserMenu';
 import { useTaskStore, Tag } from './store/useTaskStore';
+import { recoverInvalidTags } from './utils/recoverInvalidTags';
 
 function App() {
   const { 
@@ -82,21 +83,31 @@ function App() {
 
   // 在 loadUserData 或类似函数中
   const loadUserData = async (userId: string) => {
+    if (!userId) return;
+
     try {
+      console.log('开始从云端加载数据...');
+
       const [cloudTasks, cloudTags] = await Promise.all([
         loadTasksFromCloud(userId),
         loadTagsFromCloud(userId)
       ]);
-      
-      setTasks(cloudTasks);
-      setTags(cloudTags);
-      
-      // 关键修复：清除可能失效的选中标签
-      setSelectedTags([]);
-      const finalTags = recoverInvalidTags(cloudTasks, cloudTags);
 
-    } catch (err) {
-      console.error('加载云端数据失败:', err);
+      // ==================== 修复：加载所有任务（含回收站） ====================
+      const allTasks = cloudTasks || [];
+
+      // 恢复脏标签（基于所有任务）
+      const finalTags = recoverInvalidTags(allTasks, cloudTags);
+
+      // 更新状态
+      setTasks(allTasks);           // 保存全部任务，包括回收站
+      setTags(finalTags);
+      setSelectedTags([]);
+
+      console.log(`✅ 加载完成：${allTasks.length} 个任务（含回收站），${finalTags.length} 个标签`);
+
+    } catch (error) {
+      console.error('加载云端数据失败:', error);
     }
   };
 
@@ -560,7 +571,7 @@ function App() {
                               <button
                                 onClick={() => handleRestoreFromTrash(task.id)}
                                 className="p-2 rounded-lg text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-                                title="恢复"
+                                title="恢复到归档"
                               >
                                 <RotateCcw size={18} />
                               </button>
