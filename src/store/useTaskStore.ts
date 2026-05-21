@@ -153,7 +153,7 @@ export const useTaskStore = create<TaskStore>()(
         set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
-              ? { ...task, deleted: false, deletedAt: undefined }
+              ? { ...task, deleted: false,  archived: true,deletedAt: undefined }
               : task
           ),
         })),
