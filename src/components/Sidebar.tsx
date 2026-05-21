@@ -59,6 +59,9 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
   const [dragOverTagId, setDragOverTagId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
 
+  console.log('Sidebar tags:', tags);
+  console.log('Sidebar tags length:', tags?.length);
+
   // 构建标签树
   const buildTagTree = (parentId: string | null = null): TagWithChildren[] => {
     return tags
