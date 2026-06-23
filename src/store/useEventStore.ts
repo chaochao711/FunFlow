@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useSyncStore } from './useSyncStore';
 
 export interface TaskEvent {
   id: string;
@@ -38,22 +39,29 @@ export const useEventStore = create<EventStore>()(
     (set, get) => ({
       events: [],
 
-      addEvent: (event) =>
-        set((state) => ({ events: [event, ...state.events] })),
+      addEvent: (event) => {
+        useSyncStore.getState().markEventDirty(event.id);
+        set((state) => ({ events: [event, ...state.events] }));
+      },
 
-      updateEvent: (id, updates) =>
+      updateEvent: (id, updates) => {
+        useSyncStore.getState().markEventDirty(id);
         set((state) => ({
           events: state.events.map((e) =>
             e.id === id ? { ...e, ...updates } : e
           ),
-        })),
+        }));
+      },
 
-      deleteEvent: (id) =>
+      deleteEvent: (id) => {
+        useSyncStore.getState().markEventDirty(id);
         set((state) => ({
           events: state.events.filter((e) => e.id !== id),
-        })),
+        }));
+      },
 
-      toggleEventComplete: (id) =>
+      toggleEventComplete: (id) => {
+        useSyncStore.getState().markEventDirty(id);
         set((state) => ({
           events: state.events.map((e) =>
             e.id === id
@@ -65,7 +73,8 @@ export const useEventStore = create<EventStore>()(
                 }
               : e
           ),
-        })),
+        }));
+      },
 
       getEventsByTask: (taskId) => {
         const evts = get().events;

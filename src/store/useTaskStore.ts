@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useSyncStore } from './useSyncStore';
 
 export interface Task {
   id: string;
@@ -89,6 +90,7 @@ interface TaskStore {
   // 云同步
   setTasks: (tasks: Task[]) => void;
   setTags: (tags: Tag[]) => void;
+  mergeTrashTasks: (cloudTrash: Task[]) => void;
 }
 
 const defaultTags: Tag[] = [
@@ -116,21 +118,24 @@ export const useTaskStore = create<TaskStore>()(
       eventHoverDelay: 2000,
       
       // ========== Task Actions ==========
-      
-      addTask: (task) =>
-        set((state) => ({ 
-          tasks: [{ ...task, archived: false, deleted: false, history: task.history || [] }, ...state.tasks] 
-        })),
-      
-      updateTask: (id, updates) =>
-        set((state) => {
+
+      addTask: (task) => {
+        useSyncStore.getState().markTaskDirty(task.id);
+        return set((state) => ({
+          tasks: [{ ...task, archived: false, deleted: false, history: task.history || [] }, ...state.tasks]
+        }));
+      },
+
+      updateTask: (id, updates) => {
+        useSyncStore.getState().markTaskDirty(id);
+        return set((state) => {
           const task = state.tasks.find(t => t.id === id);
           const newUpdates = { ...updates };
-          
+
           if (updates.status === 'completed' && task?.status !== 'completed') {
             newUpdates.completedAt = new Date().toISOString();
           }
-          
+
           return {
             tasks: state.tasks.map((task) =>
               task.id === id
@@ -138,72 +143,87 @@ export const useTaskStore = create<TaskStore>()(
                 : task
             ),
           };
-        }),
-      
-      deleteTask: (id) =>
-        set((state) => ({
+        });
+      },
+
+      deleteTask: (id) => {
+        useSyncStore.getState().markTaskDirty(id);
+        return set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
               ? { ...task, deleted: true, deletedAt: new Date().toISOString() }
               : task
           ),
-        })),
-      
+        }));
+      },
+
       permanentDeleteTask: (id) =>
         set((state) => ({
           tasks: state.tasks.filter((task) => task.id !== id),
         })),
-      
-      restoreTask: (id) =>
-        set((state) => ({
+
+      restoreTask: (id) => {
+        useSyncStore.getState().markTaskDirty(id);
+        return set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
               ? { ...task, deleted: false,  archived: true,deletedAt: undefined }
               : task
           ),
-        })),
-      
-      archiveTask: (id) =>
-        set((state) => ({
+        }));
+      },
+
+      archiveTask: (id) => {
+        useSyncStore.getState().markTaskDirty(id);
+        return set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
               ? { ...task, archived: true, archivedAt: new Date().toISOString() }
               : task
           ),
-        })),
-      
-      unarchiveTask: (id) =>
-        set((state) => ({
+        }));
+      },
+
+      unarchiveTask: (id) => {
+        useSyncStore.getState().markTaskDirty(id);
+        return set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
               ? { ...task, archived: false, archivedAt: undefined }
               : task
           ),
-        })),
-      
+        }));
+      },
+
       autoArchiveTasks: () => {
         const { archiveSettings, tasks } = get();
         if (!archiveSettings.enabled) return;
-        
+
         const archiveThreshold = new Date();
         archiveThreshold.setDate(archiveThreshold.getDate() - archiveSettings.autoArchiveDays);
-        
+
+        const toArchive: string[] = [];
         const updatedTasks = tasks.map((task) => {
           if (task.archived || task.deleted) return task;
           if (task.status === 'completed' && task.completedAt) {
             const completedDate = new Date(task.completedAt);
             if (completedDate < archiveThreshold) {
+              toArchive.push(task.id);
               return { ...task, archived: true, archivedAt: new Date().toISOString() };
             }
           }
           return task;
         });
-        
+
+        if (toArchive.length > 0) {
+          useSyncStore.getState().markTasksDirty(toArchive);
+        }
         set({ tasks: updatedTasks });
       },
-      
-      addHistory: (taskId, field, oldValue, newValue) =>
-        set((state) => ({
+
+      addHistory: (taskId, field, oldValue, newValue) => {
+        useSyncStore.getState().markTaskDirty(taskId);
+        return set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === taskId
               ? {
@@ -222,14 +242,16 @@ export const useTaskStore = create<TaskStore>()(
                 }
               : task
           ),
-        })),
-      
-      restoreVersion: (taskId, historyId) =>
-        set((state) => {
+        }));
+      },
+
+      restoreVersion: (taskId, historyId) => {
+        useSyncStore.getState().markTaskDirty(taskId);
+        return set((state) => {
           const task = state.tasks.find((t) => t.id === taskId);
           const historyEntry = task?.history?.find((h) => h.id === historyId);
           if (!task || !historyEntry) return state;
-          
+
           return {
             tasks: state.tasks.map((t) =>
               t.id === taskId
@@ -237,64 +259,73 @@ export const useTaskStore = create<TaskStore>()(
                 : t
             ),
           };
-        }),
-      
-      // 清空回收站
+        });
+      },
+
+      // 清空回收站（仅本地移除，云端保留 7 天）
       emptyTrash: () =>
         set((state) => ({
           tasks: state.tasks.filter((task) => !task.deleted),
         })),
-      
+
       // ========== Tag Actions ==========
-      
-      addTag: (tag) =>
-        set((state) => ({ tags: [...state.tags, tag] })),
-      
-      updateTag: (id, updates) =>
-        set((state) => ({
+
+      addTag: (tag) => {
+        useSyncStore.getState().markTagDirty(tag.id);
+        return set((state) => ({ tags: [...state.tags, tag] }));
+      },
+
+      updateTag: (id, updates) => {
+        useSyncStore.getState().markTagDirty(id);
+        return set((state) => ({
           tags: state.tags.map((tag) =>
             tag.id === id ? { ...tag, ...updates } : tag
           ),
-        })),
-      
-      deleteTag: (id) =>
-        set((state) => ({
+        }));
+      },
+
+      deleteTag: (id) => {
+        useSyncStore.getState().markTagDirty(id);
+        return set((state) => ({
           tags: state.tags.filter((tag) => tag.id !== id),
           tasks: state.tasks.map((task) => ({
             ...task,
             tags: task.tags.filter((tagId) => tagId !== id),
           })),
-        })),
-      
-      restoreToArchive: (id) =>
-        set((state) => ({
+        }));
+      },
+
+      restoreToArchive: (id) => {
+        useSyncStore.getState().markTaskDirty(id);
+        return set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
-              ? { 
-                  ...task, 
-                  deleted: false, 
+              ? {
+                  ...task,
+                  deleted: false,
                   deletedAt: undefined,
                   archived: true,
                   archivedAt: new Date().toISOString()
                 }
               : task
           ),
-        })),
+        }));
+      },
 
       moveTag: (dragId, targetId, position) =>
         set((state) => {
           const dragIndex = state.tags.findIndex(t => t.id === dragId);
           const targetIndex = state.tags.findIndex(t => t.id === targetId);
-          
+
           if (dragIndex === -1 || targetIndex === -1) return state;
-          
+
           const dragTag = { ...state.tags[dragIndex] };
           const targetTag = state.tags[targetIndex];
           let newTags = [...state.tags];
-          
+
           newTags.splice(dragIndex, 1);
           let newTargetIndex = newTags.findIndex(t => t.id === targetId);
-          
+
           if (position === 'inside') {
             dragTag.parentId = targetTag.id;
             dragTag.level = targetTag.level + 1;
@@ -307,19 +338,29 @@ export const useTaskStore = create<TaskStore>()(
             const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
             newTags.splice(insertIndex, 0, dragTag);
           }
-          
+
           const regroup = (parentId: string | null) => {
             const siblings = newTags.filter(t => t.parentId === parentId);
             siblings.forEach((t, idx) => {
               t.order = idx;
             });
           };
-          
+
+          const toMark: string[] = [dragId, targetId];
           regroup(dragTag.parentId);
+          const dragParent = dragTag.parentId;
+          // 找所有排序可能变化的同级标签
+          const reordered = newTags.filter(t => t.parentId === dragParent);
+          reordered.forEach(t => { if (!toMark.includes(t.id)) toMark.push(t.id); });
           if (position === 'inside') {
             regroup(targetTag.id);
+            const targetChildren = newTags.filter(t => t.parentId === targetTag.id);
+            targetChildren.forEach(t => { if (!toMark.includes(t.id)) toMark.push(t.id); });
           }
-          
+
+          // 异步标记 dirty（避免 set 内部副作用）
+          setTimeout(() => useSyncStore.getState().markTagsDirty(toMark), 0);
+
           return { tags: newTags };
         }),
       
@@ -348,6 +389,17 @@ export const useTaskStore = create<TaskStore>()(
       
       setTasks: (tasks) => set({ tasks }),
       setTags: (tags) => set({ tags }),
+
+      // 合并云端回收站任务到本地（云端版本优先）
+      mergeTrashTasks: (cloudTrash) =>
+        set((state) => {
+          const merged = new Map(state.tasks.map(t => [t.id, t]));
+          for (const ct of cloudTrash) {
+            merged.set(ct.id, ct); // 云端版本优先
+          }
+          const tasks = Array.from(merged.values());
+          return { tasks };
+        }),
     }),
     {
       name: 'funflow-storage',

@@ -9,6 +9,7 @@ import { loadTasksFromCloud, loadTagsFromCloud, syncTasksToCloud, syncTagsToClou
 import { loadEventsFromCloud, syncEventsToCloud } from './services/eventSyncService';
 import { recoverInvalidTags } from './utils/recoverInvalidTags';
 import { subscribeToRealtime } from './services/realtimeSync';
+import { purgeExpiredTrash } from './services/syncService';
 import MainPage from './views/MainPage';
 import ArchivePage from './views/ArchivePage';
 import TrashPage from './views/TrashPage';
@@ -67,6 +68,9 @@ function App() {
       setTasks(mergedTasks);
       setTags(finalTags);
 
+      // 页面加载时清理云端已过期回收站任务（7 天）
+      purgeExpiredTrash(userId);
+
       // 事件加载：与本地合并，保留本地有而云端没有的事件
       loadEventsFromCloud(userId)
         .then(data => {
@@ -85,7 +89,7 @@ function App() {
     }
   };
 
-  // ========== 云同步（800ms 防抖） ==========
+  // ========== 云同步（300ms 防抖，增量发送脏数据） ==========
   useEffect(() => {
     if (!session?.user?.id) return;
     const timer = setTimeout(async () => {
@@ -98,7 +102,7 @@ function App() {
       } catch (err) {
         console.error('同步失败:', err);
       }
-    }, 800);
+    }, 300);
     return () => clearTimeout(timer);
   }, [tasks, tags, events, session]);
 

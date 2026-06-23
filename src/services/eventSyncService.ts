@@ -1,46 +1,52 @@
-// src/services/eventSyncService.ts — 事件云同步
+// src/services/eventSyncService.ts — 事件云同步（增量）
 
 import { supabase } from './supabase';
 import { TaskEvent } from '../store/useEventStore';
+import { useSyncStore } from '../store/useSyncStore';
+
+// ========== 共享 DB→APP 映射器 ==========
+
+export function dbEventToApp(item: any): TaskEvent {
+  return {
+    id: item.event_id,
+    taskId: item.task_id,
+    type: item.type,
+    content: item.content,
+    timestamp: item.timestamp,
+    createdAt: item.created_at,
+    userId: item.user_id,
+    completed: item.completed ?? false,
+    completedAt: item.completed_at ?? undefined,
+    estimatedTime: item.estimated_time ?? undefined,
+    updatedAt: item.updated_at ?? undefined,
+  };
+}
+
+// ========== 同步 ==========
 
 export async function syncEventsToCloud(userId: string, events: TaskEvent[]) {
   try {
-    // 保护：本地事件为空且云端可能有数据时，跳过（避免误删）
-    if (!events || events.length === 0) {
-      const { data: cloudEvents, error: checkError } = await supabase
-        .from('task_events')
-        .select('event_id', { count: 'exact', head: true })
-        .eq('user_id', userId);
+    const { dirtyEventIds, clearDirtyEvents } = useSyncStore.getState();
+    if (dirtyEventIds.length === 0) return;
 
-      // 表不存在或云端也为空 → 跳过
-      if (checkError || !cloudEvents) return;
-      // 云端有数据但本地为空 → 跳过（可能是加载失败，不删除云端数据）
-      return;
-    }
+    const eventMap = new Map(events.map(e => [e.id, e]));
 
-    const { data: cloudEvents, error: fetchError } = await supabase
-      .from('task_events')
-      .select('event_id')
-      .eq('user_id', userId);
-
-    if (fetchError) {
-      console.warn('事件同步跳过（云端获取失败）:', fetchError.message);
-      return;
-    }
-
-    const cloudEventIds = cloudEvents?.map((e: any) => e.event_id) || [];
-    const localEventIds = events.map(e => e.id);
-    const toDelete = cloudEventIds.filter((id: string) => !localEventIds.includes(id));
+    // 1. 找出需要从云端删除的事件（被标记 dirty 但本地已不存在的）
+    const toDelete = dirtyEventIds.filter(id => !eventMap.has(id));
 
     for (const eventId of toDelete) {
-      await supabase
+      const { error } = await supabase
         .from('task_events')
         .delete()
         .eq('user_id', userId)
         .eq('event_id', eventId);
+      if (error) console.warn('删除云端事件失败:', eventId, error);
     }
 
+    // 2. 只 upsert 脏事件中本地依然存在的
     for (const event of events) {
+      if (!dirtyEventIds.includes(event.id)) continue;
+
       const eventData = {
         user_id: userId,
         event_id: event.id,
@@ -55,16 +61,24 @@ export async function syncEventsToCloud(userId: string, events: TaskEvent[]) {
         updated_at: event.updatedAt ?? null,
       };
 
-      await supabase
+      const { error } = await supabase
         .from('task_events')
         .upsert(eventData, { onConflict: 'user_id, event_id' });
+
+      if (error) console.warn('同步事件失败:', event.id, error);
     }
 
-    console.log(`✅ 事件同步完成: ${events.length} 个事件`);
+    clearDirtyEvents();
+
+    if (dirtyEventIds.length > 0) {
+      console.log(`✅ 事件同步完成: 更新 ${events.filter(e => dirtyEventIds.includes(e.id)).length} 个, 删除 ${toDelete.length} 个`);
+    }
   } catch (error) {
     console.warn('事件同步跳过:', error);
   }
 }
+
+// ========== 加载 ==========
 
 export async function loadEventsFromCloud(userId: string): Promise<TaskEvent[]> {
   const { data, error } = await supabase
@@ -74,17 +88,5 @@ export async function loadEventsFromCloud(userId: string): Promise<TaskEvent[]> 
 
   if (error) throw error;
 
-  return (data || []).map((item: any) => ({
-    id: item.event_id,
-    taskId: item.task_id,
-    type: item.type,
-    content: item.content,
-    timestamp: item.timestamp,
-    createdAt: item.created_at,
-    userId: item.user_id,
-    completed: item.completed ?? false,
-    completedAt: item.completed_at ?? undefined,
-    estimatedTime: item.estimated_time ?? undefined,
-    updatedAt: item.updated_at ?? undefined,
-  }));
+  return (data || []).map(dbEventToApp);
 }

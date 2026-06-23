@@ -1,8 +1,10 @@
-// src/views/TrashPage.tsx — 回收站视图
+// src/views/TrashPage.tsx — 回收站视图（支持云端 7 天兜底）
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, RotateCcw, Calendar, Archive, ArrowLeft } from 'lucide-react';
+import { Trash2, RotateCcw, Calendar, Archive, ArrowLeft, Cloud, Loader2 } from 'lucide-react';
+import { supabase } from '../services/supabase';
+import { loadTrashFromCloud } from '../services/syncService';
 import { useTaskStore } from '../store/useTaskStore';
 import { getTagDisplay, getTagColorClass } from '../utils/tagUtils';
 import AppHeader from '../components/AppHeader';
@@ -10,9 +12,20 @@ import Sidebar from '../components/Sidebar';
 import TaskDetailDrawer from '../components/TaskDetailDrawer';
 import ConfirmDialog from '../components/ConfirmDialog';
 
+const TRASH_RETENTION_DAYS = 7;
+
 interface TrashPageProps {
   isDark: boolean;
   onToggleTheme: () => void;
+}
+
+/** 计算剩余保留天数 */
+function getRemainingDays(deletedAt: string): number {
+  const deleted = new Date(deletedAt);
+  const expireAt = new Date(deleted);
+  expireAt.setDate(expireAt.getDate() + TRASH_RETENTION_DAYS);
+  const remaining = Math.ceil((expireAt.getTime() - Date.now()) / 86400000);
+  return Math.max(0, remaining);
 }
 
 export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
@@ -27,14 +40,37 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
     restoreTask,
     permanentDeleteTask,
     emptyTrash,
+    mergeTrashTasks,
   } = useTaskStore();
 
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [loadingCloud, setLoadingCloud] = useState(false);
 
   const trashedTasks = tasks.filter(t => t.deleted);
-  const archivedTasks = tasks.filter(t => t.archived && !t.deleted);
+
+  // 挂载时从云端拉取回收站任务（7 天内删除的兜底）
+  useEffect(() => {
+    let cancelled = false;
+    const fetch = async () => {
+      setLoadingCloud(true);
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || cancelled) return;
+        const cloudTrash = await loadTrashFromCloud(user.id);
+        if (!cancelled && cloudTrash.length > 0) {
+          mergeTrashTasks(cloudTrash);
+        }
+      } catch (err) {
+        console.warn('拉取云端回收站失败:', err);
+      } finally {
+        if (!cancelled) setLoadingCloud(false);
+      }
+    };
+    fetch();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleRestoreFromTrash = (taskId: string) => {
     restoreTask(taskId);
@@ -98,7 +134,12 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
                     返回归档
                   </button>
 
-                  <div className="text-sm text-zinc-500 dark:text-zinc-400">
+                  <div className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400">
+                    {loadingCloud ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Cloud size={14} />
+                    )}
                     回收站: {trashedTasks.length}
                   </div>
 
@@ -116,8 +157,8 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
 
               <div className="mt-4 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  🗑️ 回收站说明：删除的任务会移到这里，您可以选择恢复或彻底删除。
-                  彻底删除后无法恢复。回收站中的任务不计入任何统计。
+                  🗑️ 删除的任务在云端保留 {TRASH_RETENTION_DAYS} 天，到期后自动彻底删除。
+                  从本地清空/彻底删除后，刷新或重新打开回收站可从云端恢复。
                 </p>
               </div>
             </div>
@@ -134,6 +175,8 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
                   {trashedTasks.map(task => {
                     const taskTags = (task.tags || []).map(tagId => tags.find(t => t.id === tagId)).filter(Boolean);
                     const isOverdue = task.dueDate && task.dueDate < new Date().toISOString().split('T')[0];
+                    const remaining = task.deletedAt ? getRemainingDays(task.deletedAt) : TRASH_RETENTION_DAYS;
+                    const isExpiringSoon = remaining <= 2;
 
                     return (
                       <motion.div
@@ -152,6 +195,13 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
                               </h3>
                               <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
                                 已删除
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                isExpiringSoon
+                                  ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+                                  : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                              }`}>
+                                {remaining === 0 ? '即将清理' : `剩余 ${remaining} 天`}
                               </span>
                             </div>
 
@@ -197,7 +247,7 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
                             <button
                               onClick={() => setShowDeleteConfirm(task.id)}
                               className="p-2 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                              title="彻底删除"
+                              title="从本地移除（云端保留 7 天）"
                             >
                               <Trash2 size={18} />
                             </button>
@@ -224,7 +274,7 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
         onClose={() => setShowEmptyConfirm(false)}
         onConfirm={handleEmptyTrash}
         title="清空回收站"
-        message="确定要清空回收站吗？此操作将永久删除所有任务，无法恢复。"
+        message={`确定要从本地清空回收站吗？已删除的任务将在云端继续保留 ${TRASH_RETENTION_DAYS} 天，期间可从云端恢复。`}
         confirmText="确认清空"
       />
 
@@ -233,7 +283,7 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
         onClose={() => setShowDeleteConfirm(null)}
         onConfirm={() => handlePermanentDelete(showDeleteConfirm!)}
         title="彻底删除"
-        message="确定要彻底删除这个任务吗？此操作无法撤销。"
+        message={`确定要从本地彻底删除这个任务吗？任务将在云端保留 ${TRASH_RETENTION_DAYS} 天，期间可从云端恢复。`}
         confirmText="确认删除"
       />
     </div>

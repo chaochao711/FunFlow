@@ -4,59 +4,8 @@
 import { supabase } from './supabase';
 import { useTaskStore, Task, Tag } from '../store/useTaskStore';
 import { useEventStore, TaskEvent } from '../store/useEventStore';
-
-// ========== DB 蛇形命名 → 应用驼峰命名（与 syncService.ts 一致） ==========
-
-function dbTaskToApp(item: any): Task {
-  return {
-    id: item.task_id,
-    title: item.title,
-    description: item.description,
-    dueDate: item.due_date,
-    priority: item.priority,
-    status: item.status,
-    tags: item.tags || [],
-    createdAt: item.created_at,
-    updatedAt: item.updated_at,
-    completedAt: item.completed_at,
-    archived: item.archived,
-    archivedAt: item.archived_at,
-    deleted: item.deleted,
-    deletedAt: item.deleted_at,
-    history: item.history || [],
-    createdBy: item.created_by,
-    assignedTo: item.assigned_to,
-  };
-}
-
-function dbTagToApp(item: any): Tag {
-  return {
-    id: item.tag_id,
-    name: item.name,
-    parentId: item.parent_id,
-    colorType: item.color_type,
-    emoji: item.emoji,
-    color: item.color,
-    level: item.level,
-    order: item.order,
-  };
-}
-
-function dbEventToApp(item: any): TaskEvent {
-  return {
-    id: item.event_id,
-    taskId: item.task_id,
-    type: item.type,
-    content: item.content,
-    timestamp: item.timestamp,
-    createdAt: item.created_at,
-    userId: item.user_id,
-    completed: item.completed ?? false,
-    completedAt: item.completed_at ?? undefined,
-    estimatedTime: item.estimated_time ?? undefined,
-    updatedAt: item.updated_at ?? undefined,
-  };
-}
+import { dbTaskToApp, dbTagToApp } from './syncService';
+import { dbEventToApp } from './eventSyncService';
 
 // ========== 订阅管理 ==========
 
@@ -171,9 +120,11 @@ export function subscribeToRealtime(userId: string) {
       const existing = events.find((e) => e.id === incoming.id);
 
       // 用 updatedAt 比较避免回环（编辑时 updatedAt 会变）
-      const incomingTime = incoming.updatedAt || incoming.createdAt;
-      const existingTime = existing.updatedAt || existing.createdAt;
-      if (existing && incomingTime <= existingTime) return;
+      if (existing) {
+        const incomingTime = incoming.updatedAt || incoming.createdAt;
+        const existingTime = existing.updatedAt || existing.createdAt;
+        if (incomingTime <= existingTime) return;
+      }
 
       setEvents(
         existing
