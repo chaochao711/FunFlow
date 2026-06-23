@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trash2, RotateCcw, Calendar, Archive, ArrowLeft, Cloud, Loader2 } from 'lucide-react';
+import { RotateCcw, Calendar, Archive, ArrowLeft, Cloud, Loader2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { loadTrashFromCloud } from '../services/syncService';
 import { useTaskStore } from '../store/useTaskStore';
@@ -10,7 +10,6 @@ import { getTagDisplay, getTagColorClass } from '../utils/tagUtils';
 import AppHeader from '../components/AppHeader';
 import Sidebar from '../components/Sidebar';
 import TaskDetailDrawer from '../components/TaskDetailDrawer';
-import ConfirmDialog from '../components/ConfirmDialog';
 
 const TRASH_RETENTION_DAYS = 7;
 
@@ -38,14 +37,10 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
     setSelectedTask,
     setShowArchived,
     restoreTask,
-    permanentDeleteTask,
-    emptyTrash,
     mergeTrashTasks,
   } = useTaskStore();
 
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [loadingCloud, setLoadingCloud] = useState(false);
 
   const trashedTasks = tasks.filter(t => t.deleted);
@@ -74,16 +69,6 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
 
   const handleRestoreFromTrash = (taskId: string) => {
     restoreTask(taskId);
-  };
-
-  const handlePermanentDelete = (taskId: string) => {
-    permanentDeleteTask(taskId);
-    setShowDeleteConfirm(null);
-  };
-
-  const handleEmptyTrash = () => {
-    emptyTrash();
-    setShowEmptyConfirm(false);
   };
 
   const handleArchiveClick = () => {
@@ -120,7 +105,7 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
                     <ArrowLeft size={20} className="text-zinc-600 dark:text-zinc-400" />
                   </button>
                   <div className="flex items-center gap-2">
-                    <Trash2 size={24} className="text-red-500" />
+                    <span className="text-2xl">🗑️</span>
                     <h2 className="text-xl font-bold text-zinc-900 dark:text-white">回收站</h2>
                   </div>
                 </div>
@@ -142,23 +127,13 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
                     )}
                     回收站: {trashedTasks.length}
                   </div>
-
-                  {trashedTasks.length > 0 && (
-                    <button
-                      onClick={() => setShowEmptyConfirm(true)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-colors"
-                    >
-                      <Trash2 size={16} />
-                      清空回收站
-                    </button>
-                  )}
                 </div>
               </div>
 
               <div className="mt-4 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl">
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   🗑️ 删除的任务在云端保留 {TRASH_RETENTION_DAYS} 天，到期后自动彻底删除。
-                  从本地清空/彻底删除后，刷新或重新打开回收站可从云端恢复。
+                  打开回收站时会自动从云端拉回近期删除的任务。
                 </p>
               </div>
             </div>
@@ -236,22 +211,14 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleRestoreFromTrash(task.id)}
-                              className="p-2 rounded-lg text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-                              title="恢复到归档"
-                            >
-                              <RotateCcw size={18} />
-                            </button>
-                            <button
-                              onClick={() => setShowDeleteConfirm(task.id)}
-                              className="p-2 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                              title="从本地移除（云端保留 7 天）"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
+                          {/* 仅保留恢复按钮 */}
+                          <button
+                            onClick={() => handleRestoreFromTrash(task.id)}
+                            className="p-2 rounded-lg text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                            title="恢复到归档"
+                          >
+                            <RotateCcw size={18} />
+                          </button>
                         </div>
                       </motion.div>
                     );
@@ -267,24 +234,6 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
         taskId={selectedTaskId}
         onClose={() => setSelectedTask(null)}
         tags={tags}
-      />
-
-      <ConfirmDialog
-        isOpen={showEmptyConfirm}
-        onClose={() => setShowEmptyConfirm(false)}
-        onConfirm={handleEmptyTrash}
-        title="清空回收站"
-        message={`确定要从本地清空回收站吗？已删除的任务将在云端继续保留 ${TRASH_RETENTION_DAYS} 天，期间可从云端恢复。`}
-        confirmText="确认清空"
-      />
-
-      <ConfirmDialog
-        isOpen={showDeleteConfirm !== null}
-        onClose={() => setShowDeleteConfirm(null)}
-        onConfirm={() => handlePermanentDelete(showDeleteConfirm!)}
-        title="彻底删除"
-        message={`确定要从本地彻底删除这个任务吗？任务将在云端保留 ${TRASH_RETENTION_DAYS} 天，期间可从云端恢复。`}
-        confirmText="确认删除"
       />
     </div>
   );
