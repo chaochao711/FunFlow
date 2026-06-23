@@ -1,31 +1,15 @@
-// src/components/TaskDetailDrawer.tsx
+// src/components/TaskDetailDrawer.tsx — 任务详情抽屉（直接编辑、退出自动保存）
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Clock, RotateCcw, Edit2, Save, Tag as TagIcon, Calendar, Plus } from 'lucide-react';
+import { X, Clock, RotateCcw, Tag as TagIcon, Calendar, Plus } from 'lucide-react';
 import { useTaskStore, Task, Tag } from '../store/useTaskStore';
-
-const colorOptions = [
-  { name: 'red', class: 'bg-red-500' },
-  { name: 'orange', class: 'bg-orange-500' },
-  { name: 'amber', class: 'bg-amber-500' },
-  { name: 'yellow', class: 'bg-yellow-500' },
-  { name: 'green', class: 'bg-green-500' },
-  { name: 'emerald', class: 'bg-emerald-500' },
-  { name: 'blue', class: 'bg-blue-500' },
-  { name: 'indigo', class: 'bg-indigo-500' },
-  { name: 'purple', class: 'bg-purple-500' },
-  { name: 'pink', class: 'bg-pink-500' },
-];
-
-const emojiOptions = ['📁', '💼', '🏠', '📚', '💪', '🎨', '💻', '📅', '⚡', '🎯', '🌟', '❤️'];
-
-function getTagDisplay(tag: Tag): string {
-  if (tag.colorType === 'emoji') {
-    return tag.emoji || '📌';
-  }
-  return '●';
-}
+import { useEventStore } from '../store/useEventStore';
+import { getTagDisplay } from '../utils/tagUtils';
+import type { TaskEvent } from '../store/useEventStore';
+import CreateTagModal from './CreateTagModal';
+import CreateEventModal from './CreateEventModal';
+import EventTimeline from './EventTimeline';
 
 interface TaskDetailDrawerProps {
   taskId: string | null;
@@ -35,64 +19,48 @@ interface TaskDetailDrawerProps {
 
 export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDrawerProps) {
   const { tasks, updateTask, addHistory, restoreVersion, addTag } = useTaskStore();
+  const { events, addEvent, updateEvent, deleteEvent, toggleEventComplete, getEventsByTask } = useEventStore();
   const task = tasks.find(t => t.id === taskId);
-  const [isEditing, setIsEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Task>>({});
-  
-  // 新建标签状态
   const [showNewTagForm, setShowNewTagForm] = useState(false);
-  const [newTagName, setNewTagName] = useState('');
-  const [newTagType, setNewTagType] = useState<'emoji' | 'color'>('emoji');
-  const [newTagEmoji, setNewTagEmoji] = useState('📁');
-  const [newTagColor, setNewTagColor] = useState('blue');
+  const [showHistory, setShowHistory] = useState(false);
+  const [showEvents, setShowEvents] = useState(true);
+  const [showCreateEvent, setShowCreateEvent] = useState(false);
+  const [editEvent, setEditEvent] = useState<TaskEvent | null>(null);
+
+  // 切换任务时重置编辑状态
+  useEffect(() => {
+    setEditData({});
+    setShowHistory(false);
+  }, [taskId]);
 
   if (!task) return null;
 
-  const handleSave = () => {
+  const currentTags = editData.tags !== undefined ? editData.tags : task.tags;
+
+  // 自动保存：将所有 editData 中的变更写入 store
+  const autoSave = () => {
+    const changes: Partial<Task> = {};
     Object.entries(editData).forEach(([key, value]) => {
-      if (value !== undefined && value !== task[key as keyof Task]) {
-        updateTask(task.id, { [key]: value });
+      if (value !== undefined && JSON.stringify(value) !== JSON.stringify(task[key as keyof Task])) {
+        changes[key as keyof Task] = value as any;
         addHistory(task.id, key, task[key as keyof Task], value);
       }
     });
-    setIsEditing(false);
+    if (Object.keys(changes).length > 0) {
+      updateTask(task.id, changes);
+    }
     setEditData({});
   };
 
-  const handleRestore = (historyId: string) => {
-    if (confirm('恢复到此版本？')) {
-      restoreVersion(task.id, historyId);
-    }
+  // 关闭时自动保存
+  const handleClose = () => {
+    autoSave();
+    onClose();
   };
 
-  const handleCreateTag = () => {
-    if (!newTagName.trim()) return;
-    
-    const newTag: Tag = {
-      id: Date.now().toString(),
-      name: newTagName.trim(),
-      parentId: null,
-      colorType: newTagType,
-      emoji: newTagType === 'emoji' ? newTagEmoji : undefined,
-      color: newTagType === 'color' ? newTagColor : undefined,
-      level: 0,
-      order: tags.length,
-    };
-    
-    addTag(newTag);
-    if (isEditing) {
-      setEditData({
-        ...editData,
-        tags: [...(editData.tags || task.tags || []), newTag.id]
-      });
-    } else {
-      updateTask(task.id, { tags: [...(task.tags || []), newTag.id] });
-    }
-    setShowNewTagForm(false);
-    setNewTagName('');
-    setNewTagType('emoji');
-    setNewTagEmoji('📁');
-    setNewTagColor('blue');
+  const setField = (field: keyof Task, value: any) => {
+    setEditData(prev => ({ ...prev, [field]: value }));
   };
 
   const buildTagTree = (parentId: string | null = null, level: number = 0): Tag[] => {
@@ -104,26 +72,17 @@ export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDr
 
   const renderTagOption = (tag: Tag & { level: number }) => {
     const children = buildTagTree(tag.id, tag.level + 1);
-    const currentTags = isEditing ? (editData.tags !== undefined ? editData.tags : task.tags) : task.tags;
     const isSelected = (currentTags || []).includes(tag.id);
-    
+
     return (
       <div key={tag.id}>
         <button
           type="button"
           onClick={() => {
-            if (isEditing) {
-              const newTags = isSelected
-                ? (currentTags || []).filter(t => t !== tag.id)
-                : [...(currentTags || []), tag.id];
-              setEditData({ ...editData, tags: newTags });
-            } else {
-              const newTags = isSelected
-                ? (task.tags || []).filter(t => t !== tag.id)
-                : [...(task.tags || []), tag.id];
-              updateTask(task.id, { tags: newTags });
-              addHistory(task.id, 'tags', task.tags || [], newTags);
-            }
+            const newTags = isSelected
+              ? (currentTags || []).filter(t => t !== tag.id)
+              : [...(currentTags || []), tag.id];
+            setField('tags', newTags);
           }}
           className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all ${
             isSelected
@@ -145,7 +104,7 @@ export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDr
     <AnimatePresence>
       {taskId && (
         <>
-          <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
+          <div className="fixed inset-0 bg-black/50 z-50" onClick={handleClose} />
           <motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
@@ -158,75 +117,85 @@ export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDr
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-zinc-900 dark:text-white">任务详情</h2>
                 <button
-                  onClick={() => {
-                    if (isEditing) {
-                      handleSave();
-                    } else {
-                      setIsEditing(true);
-                    }
-                  }}
-                  className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                  onClick={() => setShowHistory(!showHistory)}
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    showHistory
+                      ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400'
+                      : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400'
+                  }`}
+                  title="编辑历史"
                 >
-                  {isEditing ? <Save size={16} /> : <Edit2 size={16} />}
+                  <Clock size={16} />
                 </button>
               </div>
-              <button onClick={onClose} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg">
+              <button onClick={handleClose} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg">
                 <X size={20} />
               </button>
             </div>
 
             {/* 内容 */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* 标题 */}
+              {/* 标题 — 直接编辑 */}
               <div>
                 <label className="text-xs text-zinc-500 dark:text-zinc-400">标题</label>
-                {isEditing ? (
-                  <input
-                    type="text"
-                    defaultValue={task.title}
-                    onChange={(e) => setEditData({ ...editData, title: e.target.value })}
-                    className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
-                  />
-                ) : (
-                  <p className="text-lg font-medium text-zinc-900 dark:text-white mt-1">{task.title}</p>
-                )}
+                <input
+                  type="text"
+                  defaultValue={task.title}
+                  onChange={(e) => setField('title', e.target.value)}
+                  className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                />
               </div>
 
-              {/* 描述 */}
+              {/* 描述 — 直接编辑 */}
               <div>
                 <label className="text-xs text-zinc-500 dark:text-zinc-400">描述</label>
-                {isEditing ? (
-                  <textarea
-                    defaultValue={task.description}
-                    rows={4}
-                    onChange={(e) => setEditData({ ...editData, description: e.target.value })}
-                    className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white resize-none"
-                  />
-                ) : (
-                  <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1">
-                    {task.description || '无描述'}
-                  </p>
-                )}
+                <textarea
+                  defaultValue={task.description}
+                  rows={4}
+                  onChange={(e) => setField('description', e.target.value)}
+                  placeholder="添加描述..."
+                  className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white resize-none focus:outline-none focus:ring-2 focus:ring-violet-500"
+                />
               </div>
 
-              {/* 截止日期 */}
+              {/* 发起人 / 作用对象 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-zinc-500 dark:text-zinc-400">发起人</label>
+                  <input
+                    type="text"
+                    defaultValue={task.createdBy || ''}
+                    onChange={(e) => setField('createdBy', e.target.value || undefined)}
+                    placeholder="发起人"
+                    className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-zinc-500 dark:text-zinc-400">作用对象</label>
+                  <input
+                    type="text"
+                    defaultValue={task.assignedTo || ''}
+                    onChange={(e) => setField('assignedTo', e.target.value || undefined)}
+                    placeholder="执行者"
+                    className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+              </div>
+
+              {/* 截止日期 — 直接编辑 */}
               <div>
                 <label className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
                   <Calendar size={12} /> 截止日期
                 </label>
-                {isEditing ? (
-                  <input
-                    type="date"
-                    defaultValue={task.dueDate}
-                    onChange={(e) => setEditData({ ...editData, dueDate: e.target.value })}
-                    className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
-                  />
-                ) : (
-                  <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1">{task.dueDate || '未设置'}</p>
-                )}
+                <input
+                  type="date"
+                  defaultValue={task.dueDate}
+                  onChange={(e) => setField('dueDate', e.target.value)}
+                  className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                />
               </div>
 
-              {/* 标签 */}
+              {/* 标签 — 直接编辑 */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
@@ -249,136 +218,157 @@ export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDr
                 </div>
               </div>
 
-              {/* 历史记录 */}
-              <div>
-                <label className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1 mb-2">
-                  <Clock size={12} /> 编辑历史
-                </label>
-                <div className="space-y-2">
-                  {task.history.length === 0 ? (
-                    <p className="text-sm text-zinc-400">暂无编辑记录</p>
-                  ) : (
-                    task.history.slice(0, 10).map(record => (
-                      <div key={record.id} className="text-sm p-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <span className="text-zinc-600 dark:text-zinc-300">
-                              修改了 {record.field}:
-                            </span>
-                            <span className="text-zinc-400 line-through ml-1">{String(record.oldValue) || '空'}</span>
-                            <span className="text-zinc-600 mx-1">→</span>
-                            <span className="text-zinc-700 dark:text-zinc-200">{String(record.newValue) || '空'}</span>
-                          </div>
-                          <button
-                            onClick={() => handleRestore(record.id)}
-                            className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
-                          >
-                            <RotateCcw size={12} className="text-violet-500" />
-                          </button>
-                        </div>
-                        <div className="text-xs text-zinc-400 mt-1">
-                          {new Date(record.timestamp).toLocaleString()}
+              {/* 完成节点 + 事件 */}
+              {(() => {
+                const taskEvents = getEventsByTask(task.id);
+                const completions = taskEvents.filter(e => e.type === 'completion');
+                const otherEvents = taskEvents.filter(e => e.type !== 'completion');
+                const doneCount = completions.filter(e => e.completed).length;
+
+                return (
+                  <>
+                    {/* 完成节点 */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                          ○ 完成节点 {completions.length > 0 && `(${doneCount}/${completions.length})`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateEvent(true)}
+                          className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 flex items-center gap-1"
+                        >
+                          <Plus size={12} /> 添加
+                        </button>
+                      </div>
+                      {completions.length === 0 ? (
+                        <p className="text-xs text-zinc-400 py-2">暂无完成节点</p>
+                      ) : (
+                        <EventTimeline
+                          events={completions}
+                          tasks={tasks}
+                          onToggleComplete={(id) => toggleEventComplete(id)}
+                          onEditEvent={(evt) => setEditEvent(evt)}
+                          onDeleteEvent={(id) => { if (confirm('删除此完成节点？')) deleteEvent(id); }}
+                          compact
+                        />
+                      )}
+                    </div>
+
+                    {/* 分隔 */}
+                    {completions.length > 0 && otherEvents.length > 0 && (
+                      <div className="border-b border-zinc-100 dark:border-zinc-800" />
+                    )}
+
+                    {/* 其他事件 */}
+                    {otherEvents.length > 0 && (
+                      <div>
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                          📅 事件 ({otherEvents.length})
+                        </span>
+                        <div className="mt-2">
+                          <EventTimeline
+                            events={otherEvents}
+                            tasks={tasks}
+                            onEditEvent={(evt) => setEditEvent(evt)}
+                            onDeleteEvent={(id) => { if (confirm('删除此事件？')) deleteEvent(id); }}
+                            compact
+                          />
                         </div>
                       </div>
-                    ))
-                  )}
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* 编辑历史（可折叠） */}
+              {showHistory && (
+                <div>
+                  <div className="flex items-center gap-1 mb-2">
+                    <Clock size={12} className="text-zinc-400" />
+                    <label className="text-xs text-zinc-500 dark:text-zinc-400">编辑历史</label>
+                  </div>
+                  <div className="space-y-2">
+                    {task.history.length === 0 ? (
+                      <p className="text-sm text-zinc-400">暂无编辑记录</p>
+                    ) : (
+                      task.history.slice(0, 10).map(record => (
+                        <div key={record.id} className="text-sm p-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <span className="text-zinc-600 dark:text-zinc-300">
+                                修改了 {record.field}:
+                              </span>
+                              <span className="text-zinc-400 line-through ml-1">{String(record.oldValue) || '空'}</span>
+                              <span className="text-zinc-600 mx-1">→</span>
+                              <span className="text-zinc-700 dark:text-zinc-200">{String(record.newValue) || '空'}</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                if (confirm('恢复到此版本？')) {
+                                  restoreVersion(task.id, record.id);
+                                }
+                              }}
+                              className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
+                              title="恢复到此版本"
+                            >
+                              <RotateCcw size={12} className="text-violet-500" />
+                            </button>
+                          </div>
+                          <div className="text-xs text-zinc-400 mt-1">
+                            {new Date(record.timestamp).toLocaleString()}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </motion.div>
         </>
       )}
 
-      {/* 新建标签弹窗 */}
-      {showNewTagForm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]" onClick={() => setShowNewTagForm(false)}>
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-96 max-w-[90vw] shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-lg mb-4 text-zinc-900 dark:text-white">新建标签</h3>
-            
-            <input
-              type="text"
-              placeholder="标签名称"
-              value={newTagName}
-              onChange={(e) => setNewTagName(e.target.value)}
-              className="w-full p-3 border border-zinc-200 dark:border-zinc-700 rounded-xl mb-4 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-              autoFocus
-            />
+      <CreateTagModal
+        isOpen={showNewTagForm}
+        onClose={() => setShowNewTagForm(false)}
+        onCreate={(newTag) => {
+          addTag(newTag);
+          setField('tags', [...currentTags, newTag.id]);
+        }}
+        animated={false}
+      />
 
-            <div className="flex gap-2 mb-4">
-              <button
-                type="button"
-                onClick={() => setNewTagType('emoji')}
-                className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 ${
-                  newTagType === 'emoji' 
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' 
-                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800'
-                }`}
-              >
-                😊 Emoji
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewTagType('color')}
-                className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 ${
-                  newTagType === 'color' 
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' 
-                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800'
-                }`}
-              >
-                🎨 颜色
-              </button>
-            </div>
+      <CreateEventModal
+        isOpen={showCreateEvent}
+        onClose={() => setShowCreateEvent(false)}
+        onCreate={(eventData) => {
+          const now = new Date().toISOString();
+          addEvent({
+            id: Date.now().toString(),
+            ...eventData,
+            createdAt: now,
+            timestamp: now,
+            userId: 'local',
+          });
+          setShowCreateEvent(false);
+        }}
+        defaultType="note"
+        initialTaskId={task.id}
+      />
 
-            {newTagType === 'emoji' ? (
-              <div className="mb-4">
-                <label className="text-sm text-zinc-600 dark:text-zinc-400 mb-2 block">选择图标</label>
-                <div className="grid grid-cols-6 gap-2">
-                  {emojiOptions.map(emoji => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => setNewTagEmoji(emoji)}
-                      className={`text-2xl p-2 rounded-lg transition-all ${
-                        newTagEmoji === emoji ? 'bg-violet-100 dark:bg-violet-900/30' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                      }`}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="mb-4">
-                <label className="text-sm text-zinc-600 dark:text-zinc-400 mb-2 block">选择颜色</label>
-                <div className="flex flex-wrap gap-2">
-                  {colorOptions.map(color => (
-                    <button
-                      key={color.name}
-                      type="button"
-                      onClick={() => setNewTagColor(color.name)}
-                      className={`w-8 h-8 rounded-full ${color.class} ${
-                        newTagColor === color.name ? 'ring-2 ring-offset-2 ring-zinc-400 dark:ring-offset-zinc-900' : ''
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button onClick={() => setShowNewTagForm(false)} className="flex-1 py-2 border border-zinc-200 dark:border-zinc-700 rounded-xl">
-                取消
-              </button>
-              <button
-                onClick={handleCreateTag}
-                className="flex-1 py-2 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-xl font-medium"
-              >
-                创建标签
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 编辑事件弹窗 */}
+      <CreateEventModal
+        isOpen={editEvent !== null}
+        onClose={() => setEditEvent(null)}
+        onCreate={() => {}}
+        onUpdate={(id, updates) => {
+          updateEvent(id, updates);
+          setEditEvent(null);
+        }}
+        mode="edit"
+        editEvent={editEvent}
+      />
     </AnimatePresence>
   );
 }

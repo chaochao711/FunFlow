@@ -1,0 +1,120 @@
+// src/utils/dateUtils.ts — 相对时间格式化
+
+/** 获取本地日期字符串 YYYY-MM-DD（避免 UTC 时区偏差） */
+function localDateStr(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** 获取本地时间字符串 HH:mm（24 小时制） */
+function localTimeStr(date: Date): string {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+/** 获取完整本地日期时间 */
+function localFullStr(date: Date): string {
+  return `${localDateStr(date)} ${localTimeStr(date)}`;
+}
+
+/**
+ * 格式化日期为相对时间显示（基于本地时间）
+ * - 当天 → "14:30"
+ * - 昨天 → "昨天 14:30"
+ * - 7天内 → "3天前 14:30"
+ * - 更早 → "06-15 14:30"
+ */
+export function formatRelativeTime(dateStr: string): { display: string; full: string } {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const full = localFullStr(date);
+
+  const todayStr = localDateStr(now);
+  const targetStr = localDateStr(date);
+  const time = localTimeStr(date);
+
+  if (targetStr === todayStr) {
+    return { display: time, full };
+  }
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - targetDay.getTime()) / 86400000);
+
+  if (diffDays === 1) {
+    return { display: `昨天 ${time}`, full };
+  } else if (diffDays < 7) {
+    return { display: `${diffDays}天前 ${time}`, full };
+  } else {
+    const d = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    return { display: `${d} ${time}`, full };
+  }
+}
+
+/**
+ * 按日期分组（基于指定时间字段）
+ */
+export function groupByDate<T>(items: T[], getTimestamp: (item: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+
+  const sorted = [...items].sort((a, b) =>
+    new Date(getTimestamp(b)).getTime() - new Date(getTimestamp(a)).getTime()
+  );
+
+  for (const item of sorted) {
+    const key = localDateStr(new Date(getTimestamp(item)));
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(item);
+  }
+
+  return groups;
+}
+
+/**
+ * 按指定日期字段分组任务
+ */
+export function groupTasksByDate<T>(
+  items: T[],
+  getDate: (item: T) => string | undefined
+): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+
+  const sorted = [...items].sort((a, b) => {
+    const aDate = getDate(a);
+    const bDate = getDate(b);
+    if (!aDate && !bDate) return 0;
+    if (!aDate) return 1;
+    if (!bDate) return -1;
+    return new Date(bDate).getTime() - new Date(aDate).getTime();
+  });
+
+  for (const item of sorted) {
+    const date = getDate(item);
+    const key = date ? localDateStr(new Date(date)) : 'nodate';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(item);
+  }
+
+  return groups;
+}
+
+/**
+ * 获取日期分组标签
+ */
+export function getDateGroupLabel(dateKey: string): string {
+  const now = new Date();
+  const todayStr = localDateStr(now);
+  const yesterdayStr = localDateStr(new Date(now.getTime() - 86400000));
+
+  if (dateKey === todayStr) return '今天';
+  if (dateKey === yesterdayStr) return '昨天';
+
+  const targetDate = new Date(dateKey);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+  const diffDays = Math.round((today.getTime() - targetDay.getTime()) / 86400000);
+
+  if (diffDays < 7) return `${diffDays}天前`;
+  if (diffDays < 14) return '上周';
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}周前`;
+
+  return `${targetDate.getFullYear()}年${targetDate.getMonth() + 1}月${targetDate.getDate()}日`;
+}

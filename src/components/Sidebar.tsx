@@ -1,15 +1,13 @@
 // src/components/Sidebar.tsx
 
 import { useState } from 'react';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  ChevronDown, 
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
   ChevronRight as ChevronRightIcon,
   Plus,
   X,
-  Palette,
-  Sparkles,
   GripVertical,
   FolderPlus,
   FilePlus,
@@ -18,21 +16,8 @@ import {
 } from 'lucide-react';
 import { useTaskStore, Tag } from '../store/useTaskStore';
 import { motion, AnimatePresence } from 'framer-motion';
-
-const colorOptions = [
-  { name: 'red', class: 'bg-red-500' },
-  { name: 'orange', class: 'bg-orange-500' },
-  { name: 'amber', class: 'bg-amber-500' },
-  { name: 'yellow', class: 'bg-yellow-500' },
-  { name: 'green', class: 'bg-green-500' },
-  { name: 'emerald', class: 'bg-emerald-500' },
-  { name: 'blue', class: 'bg-blue-500' },
-  { name: 'indigo', class: 'bg-indigo-500' },
-  { name: 'purple', class: 'bg-purple-500' },
-  { name: 'pink', class: 'bg-pink-500' },
-];
-
-const emojiOptions = ['📁', '💼', '🏠', '📚', '💪', '🎨', '💻', '📅', '⚡', '🎯', '🌟', '❤️'];
+import { COLOR_OPTIONS } from '../constants/options';
+import CreateTagModal from './CreateTagModal';
 
 interface SidebarProps {
   selectedTags: string[];
@@ -51,10 +36,6 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
   const [showAddTag, setShowAddTag] = useState(false);
   const [showEditTag, setShowEditTag] = useState<{ id: string; name: string; type: 'emoji' | 'color'; emoji?: string; color?: string } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ id: string; name: string; taskCount: number; subTagCount: number } | null>(null);
-  const [newTagName, setNewTagName] = useState('');
-  const [newTagType, setNewTagType] = useState<'emoji' | 'color'>('emoji');
-  const [newTagEmoji, setNewTagEmoji] = useState('📁');
-  const [newTagColor, setNewTagColor] = useState('blue');
   const [newTagParentId, setNewTagParentId] = useState<string | null>(null);
   const [dragOverTagId, setDragOverTagId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
@@ -119,54 +100,6 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
       emoji: tag.emoji,
       color: tag.color,
     });
-    setNewTagName(tag.name);
-    setNewTagType(tag.colorType);
-    setNewTagEmoji(tag.emoji || '📁');
-    setNewTagColor(tag.color || 'blue');
-  };
-
-  const confirmEdit = () => {
-    if (showEditTag && newTagName.trim()) {
-      updateTag(showEditTag.id, {
-        name: newTagName.trim(),
-        colorType: newTagType,
-        emoji: newTagType === 'emoji' ? newTagEmoji : undefined,
-        color: newTagType === 'color' ? newTagColor : undefined,
-      });
-      setShowEditTag(null);
-      setNewTagName('');
-    }
-  };
-
-  const handleAddTag = () => {
-    if (!newTagName.trim()) return;
-    
-    const parentTag = tags.find(t => t.id === newTagParentId);
-    const level = parentTag ? parentTag.level + 1 : 0;
-    const siblings = tags.filter(t => t.parentId === newTagParentId);
-    
-    const newTag: Tag = {
-      id: Date.now().toString(),
-      name: newTagName.trim(),
-      parentId: newTagParentId,
-      colorType: newTagType,
-      emoji: newTagType === 'emoji' ? newTagEmoji : undefined,
-      color: newTagType === 'color' ? newTagColor : undefined,
-      level,
-      order: siblings.length,
-    };
-    
-    addTag(newTag);
-    
-    if (newTagParentId) {
-      const newExpanded = new Set(expandedTags);
-      newExpanded.add(newTagParentId);
-      setExpandedTags(newExpanded);
-    }
-    
-    setNewTagName('');
-    setNewTagParentId(null);
-    setShowAddTag(false);
   };
 
   const handleAddSibling = (tagId: string) => {
@@ -289,7 +222,7 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
               {tag.colorType === 'emoji' ? (
                 <span className="text-base">{tag.emoji}</span>
               ) : (
-                <div className={`w-2.5 h-2.5 rounded-full ${colorOptions.find(c => c.name === tag.color)?.class}`} />
+                <div className={`w-2.5 h-2.5 rounded-full ${COLOR_OPTIONS.find(c => c.name === tag.color)?.class}`} />
               )}
               <span className="text-sm truncate">{tag.name}</span>
               {taskCount > 0 && (
@@ -404,209 +337,42 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
       </div>
 
       {/* 新建标签弹窗 */}
-      {showAddTag && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowAddTag(false)}>
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-96 max-w-[90vw] shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-lg mb-4 text-zinc-900 dark:text-white">
-              {newTagParentId ? '新建子标签' : '新建标签'}
-            </h3>
-            
-            <input
-              type="text"
-              placeholder="标签名称"
-              value={newTagName}
-              onChange={(e) => setNewTagName(e.target.value)}
-              className="w-full p-3 border border-zinc-200 dark:border-zinc-700 rounded-xl mb-4 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-              autoFocus
-            />
-
-            {!newTagParentId && tags.length > 0 && (
-              <select
-                value={newTagParentId || ''}
-                onChange={(e) => setNewTagParentId(e.target.value || null)}
-                className="w-full p-3 border border-zinc-200 dark:border-zinc-700 rounded-xl mb-4 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
-              >
-                <option value="">顶级标签</option>
-                {tags.filter(t => t.level < 2).map(tag => (
-                  <option key={tag.id} value={tag.id}>
-                    {'  '.repeat(tag.level)}{tag.colorType === 'emoji' ? tag.emoji : '📌'} {tag.name}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            <div className="flex gap-2 mb-4">
-              <button
-                type="button"
-                onClick={() => setNewTagType('emoji')}
-                className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
-                  newTagType === 'emoji' 
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' 
-                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800'
-                }`}
-              >
-                <Sparkles size={16} /> Emoji
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewTagType('color')}
-                className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
-                  newTagType === 'color' 
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' 
-                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800'
-                }`}
-              >
-                <Palette size={16} /> 颜色
-              </button>
-            </div>
-
-            {newTagType === 'emoji' ? (
-              <div className="mb-4">
-                <label className="text-sm text-zinc-600 dark:text-zinc-400 mb-2 block">选择图标</label>
-                <div className="grid grid-cols-6 gap-2">
-                  {emojiOptions.map(emoji => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => setNewTagEmoji(emoji)}
-                      className={`text-xl p-2 rounded-lg transition-all flex items-center justify-center ${
-                        newTagEmoji === emoji 
-                          ? 'bg-violet-100 dark:bg-violet-900/30 ring-2 ring-violet-500' 
-                          : 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                      }`}
-                      style={{ width: '40px', height: '40px' }}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="mb-4">
-                <label className="text-sm text-zinc-600 dark:text-zinc-400 mb-2 block">选择颜色</label>
-                <div className="flex flex-wrap gap-2">
-                  {colorOptions.map(color => (
-                    <button
-                      key={color.name}
-                      type="button"
-                      onClick={() => setNewTagColor(color.name)}
-                      className={`w-8 h-8 rounded-full ${color.class} ${
-                        newTagColor === color.name ? 'ring-2 ring-offset-2 ring-zinc-400 dark:ring-offset-zinc-900' : ''
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button onClick={() => setShowAddTag(false)} className="flex-1 py-2 border border-zinc-200 dark:border-zinc-700 rounded-xl">
-                取消
-              </button>
-              <button
-                onClick={handleAddTag}
-                className="flex-1 py-2 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-xl font-medium"
-              >
-                创建标签
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CreateTagModal
+        isOpen={showAddTag}
+        onClose={() => setShowAddTag(false)}
+        onCreate={(tag) => {
+          addTag(tag);
+          if (newTagParentId) {
+            const newExpanded = new Set(expandedTags);
+            newExpanded.add(newTagParentId);
+            setExpandedTags(newExpanded);
+          }
+          setNewTagParentId(null);
+        }}
+        parentTags={tags}
+        initialParentId={newTagParentId}
+        title={newTagParentId ? '新建子标签' : '新建标签'}
+        animated={false}
+      />
 
       {/* 重命名标签弹窗 */}
-      {showEditTag && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowEditTag(null)}>
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-96 max-w-[90vw] shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="font-bold text-lg mb-4 text-zinc-900 dark:text-white">重命名标签</h3>
-            
-            <input
-              type="text"
-              placeholder="标签名称"
-              value={newTagName}
-              onChange={(e) => setNewTagName(e.target.value)}
-              className="w-full p-3 border border-zinc-200 dark:border-zinc-700 rounded-xl mb-4 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-              autoFocus
-            />
-
-            <div className="flex gap-2 mb-4">
-              <button
-                type="button"
-                onClick={() => setNewTagType('emoji')}
-                className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
-                  newTagType === 'emoji' 
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' 
-                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800'
-                }`}
-              >
-                <Sparkles size={16} /> Emoji
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewTagType('color')}
-                className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
-                  newTagType === 'color' 
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' 
-                    : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800'
-                }`}
-              >
-                <Palette size={16} /> 颜色
-              </button>
-            </div>
-
-            {newTagType === 'emoji' ? (
-              <div className="mb-4">
-                <label className="text-sm text-zinc-600 dark:text-zinc-400 mb-2 block">选择图标</label>
-                <div className="grid grid-cols-6 gap-2">
-                  {emojiOptions.map(emoji => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => setNewTagEmoji(emoji)}
-                      className={`text-xl p-2 rounded-lg transition-all flex items-center justify-center ${
-                        newTagEmoji === emoji 
-                          ? 'bg-violet-100 dark:bg-violet-900/30 ring-2 ring-violet-500' 
-                          : 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                      }`}
-                      style={{ width: '40px', height: '40px' }}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="mb-4">
-                <label className="text-sm text-zinc-600 dark:text-zinc-400 mb-2 block">选择颜色</label>
-                <div className="flex flex-wrap gap-2">
-                  {colorOptions.map(color => (
-                    <button
-                      key={color.name}
-                      type="button"
-                      onClick={() => setNewTagColor(color.name)}
-                      className={`w-8 h-8 rounded-full ${color.class} ${
-                        newTagColor === color.name ? 'ring-2 ring-offset-2 ring-zinc-400 dark:ring-offset-zinc-900' : ''
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button onClick={() => setShowEditTag(null)} className="flex-1 py-2 border border-zinc-200 dark:border-zinc-700 rounded-xl">
-                取消
-              </button>
-              <button
-                onClick={confirmEdit}
-                className="flex-1 py-2 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-xl font-medium"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CreateTagModal
+        isOpen={showEditTag !== null}
+        onClose={() => setShowEditTag(null)}
+        onCreate={(tag) => {
+          if (showEditTag) {
+            updateTag(showEditTag.id, {
+              name: tag.name,
+              colorType: tag.colorType,
+              emoji: tag.emoji,
+              color: tag.color,
+            });
+          }
+        }}
+        mode="edit"
+        initialData={showEditTag ? { name: showEditTag.name, type: showEditTag.type, emoji: showEditTag.emoji, color: showEditTag.color } : undefined}
+        animated={false}
+      />
 
       {/* 删除确认弹窗 */}
       {showDeleteConfirm && (

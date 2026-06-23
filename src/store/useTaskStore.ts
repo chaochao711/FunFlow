@@ -19,6 +19,8 @@ export interface Task {
   deleted: boolean;
   deletedAt?: string;
   history: TaskHistory[];
+  createdBy?: string;       // 发起人
+  assignedTo?: string;       // 作用对象
 }
 
 export interface TaskHistory {
@@ -54,6 +56,7 @@ interface TaskStore {
   showArchived: boolean;
   showTrash: boolean;
   archiveSettings: ArchiveSettings;
+  eventHoverDelay: number;
   
   // Task Actions
   restoreToArchive: (id: string) => void;
@@ -81,6 +84,7 @@ interface TaskStore {
   setShowArchived: (show: boolean) => void;
   setShowTrash: (show: boolean) => void;
   updateArchiveSettings: (settings: Partial<ArchiveSettings>) => void;
+  setEventHoverDelay: (delay: number) => void;
   
   // 云同步
   setTasks: (tasks: Task[]) => void;
@@ -109,6 +113,7 @@ export const useTaskStore = create<TaskStore>()(
         autoArchiveDays: 7,
         enabled: true,
       },
+      eventHoverDelay: 2000,
       
       // ========== Task Actions ==========
       
@@ -336,6 +341,8 @@ export const useTaskStore = create<TaskStore>()(
         set((state) => ({
           archiveSettings: { ...state.archiveSettings, ...settings }
         })),
+
+      setEventHoverDelay: (delay) => set({ eventHoverDelay: delay }),
       
       // ========== 云同步 Actions ==========
       

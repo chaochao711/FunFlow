@@ -52,6 +52,8 @@ export async function syncTasksToCloud(userId: string, tasks: Task[]) {
         deleted: task.deleted,
         deleted_at: task.deletedAt,
         history: task.history,
+        created_by: task.createdBy,
+        assigned_to: task.assignedTo,
       };
 
       const { error: upsertError } = await supabase
@@ -94,6 +96,8 @@ export async function loadTasksFromCloud(userId: string) {
     deleted: item.deleted,
     deletedAt: item.deleted_at,
     history: item.history || [],
+    createdBy: item.created_by,
+    assignedTo: item.assigned_to,
   }));
 }
 

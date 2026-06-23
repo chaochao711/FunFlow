@@ -41,21 +41,22 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
   // 转换任务为 FullCalendar 事件
   const getEvents = () => {
     return tasks
-      .filter(task => !task.archived && !task.deleted && task.dueDate)
+      .filter(task => !task.deleted && task.dueDate)
       .map(task => ({
         id: task.id,
         title: task.title,
         start: task.dueDate,
         end: task.dueDate,
         allDay: true,
-        backgroundColor: priorityColors[task.priority],
-        borderColor: priorityColors[task.priority],
-        textColor: '#ffffff',
+        backgroundColor: task.archived ? '#d1d5db' : priorityColors[task.priority],
+        borderColor: task.archived ? '#9ca3af' : priorityColors[task.priority],
+        textColor: task.archived ? '#6b7280' : '#ffffff',
         extendedProps: {
           task,
           priority: task.priority,
           status: task.status,
           tags: task.tags,
+          archived: task.archived,
         },
       }));
   };
@@ -83,7 +84,12 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
     const taskId = info.event.id;
     const newDueDate = info.event.startStr.split('T')[0];
     const task = tasks.find(t => t.id === taskId);
-    
+
+    if (task?.archived) {
+      info.revert();
+      return;
+    }
+
     if (task && task.dueDate !== newDueDate) {
       updateTask(taskId, { dueDate: newDueDate });
       addHistory(taskId, 'dueDate', task.dueDate, newDueDate);
@@ -231,14 +237,18 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
           eventContent={(eventInfo) => {
             const task = eventInfo.event.extendedProps.task as Task;
             const priority = eventInfo.event.extendedProps.priority;
-            const status = eventInfo.event.extendedProps.status;
-            
+            const isArchived = eventInfo.event.extendedProps.archived;
+
             return (
-              <div className="flex items-center gap-1 overflow-hidden px-1 py-0.5 rounded text-xs">
-                <span className="flex-shrink-0">
-                  {priority === 'high' ? '🔥' : priority === 'medium' ? '⭐' : '🌱'}
-                </span>
-                <span className="truncate flex-1">{eventInfo.event.title}</span>
+              <div className={`flex items-center gap-1 overflow-hidden px-1 py-0.5 rounded text-xs ${isArchived ? 'opacity-80' : ''}`}>
+                {isArchived ? (
+                  <span className="flex-shrink-0">📦</span>
+                ) : (
+                  <span className="flex-shrink-0">
+                    {priority === 'high' ? '🔥' : priority === 'medium' ? '⭐' : '🌱'}
+                  </span>
+                )}
+                <span className={`truncate flex-1 ${isArchived ? 'line-through' : ''}`}>{eventInfo.event.title}</span>
                 {task.tags && task.tags.length > 0 && (
                   <span className="flex-shrink-0 text-[10px] opacity-70">
                     {task.tags.slice(0, 2).map(tagId => getTagDisplay(tagId)).join('')}

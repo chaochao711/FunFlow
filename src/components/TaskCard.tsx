@@ -2,8 +2,11 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, CheckCircle, Circle, PlayCircle, Archive, Trash2, Edit3, RotateCcw } from 'lucide-react';
-import { Task, Tag } from '../store/useTaskStore';
+import { Calendar, CheckCircle, Circle, PlayCircle, Archive, Trash2, Edit3, RotateCcw, CircleCheck } from 'lucide-react';
+import { Task, Tag, useTaskStore } from '../store/useTaskStore';
+import { getTagDisplay, getTagColorClass } from '../utils/tagUtils';
+import EventTimeline from './EventTimeline';
+import type { TaskEvent } from '../store/useEventStore';
 
 interface TaskCardProps {
   task: Task;
@@ -15,6 +18,13 @@ interface TaskCardProps {
   onDelete?: () => void;
   onRestore?: () => void;
   isArchivedView?: boolean;
+  onCreateEvent?: () => void;
+  onDeleteEvent?: (eventId: string) => void;
+  onToggleEventComplete?: (eventId: string) => void;
+  onEditEvent?: (event: TaskEvent) => void;
+  changeIndicator?: 'modified' | 'status-changed';
+  allTasks?: Task[];
+  taskEvents?: TaskEvent[];
 }
 
 const priorityConfig = {
@@ -49,46 +59,52 @@ const statusConfig = {
   },
 };
 
-function getTagDisplay(tag: Tag): string {
-  if (tag.colorType === 'emoji') {
-    return tag.emoji || '📌';
-  }
-  return '●';
-}
-
-function getTagColorClass(tag: Tag): string {
-  if (tag.colorType === 'color') {
-    const colorMap: Record<string, string> = {
-      red: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-      orange: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-      amber: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-      yellow: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
-      green: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-      emerald: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-      blue: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-      indigo: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
-      purple: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
-      pink: 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300',
-    };
-    return colorMap[tag.color || 'blue'] || 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
-  }
-  return 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
-}
-
-export default function TaskCard({ 
-  task, 
-  tags, 
-  onEdit, 
-  onStatusChange, 
+export default function TaskCard({
+  task,
+  tags,
+  onEdit,
+  onStatusChange,
   onPriorityChange,
   onArchive,
   onDelete,
   onRestore,
-  isArchivedView = false
+  isArchivedView = false,
+  onCreateEvent,
+  onDeleteEvent,
+  onToggleEventComplete,
+  onEditEvent,
+  changeIndicator,
+  allTasks = [],
+  taskEvents = [],
 }: TaskCardProps) {
   const [isPriorityExpanded, setIsPriorityExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [buttonWidths, setButtonWidths] = useState<number[]>([]);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const eventHoverDelay = useTaskStore(s => s.eventHoverDelay);
+
+  const handleMouseEnter = () => {
+    if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
+    if (!showTimerRef.current && !showTimeline) {
+      showTimerRef.current = setTimeout(() => {
+        setShowTimeline(true);
+        showTimerRef.current = null;
+      }, eventHoverDelay);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (showTimerRef.current) { clearTimeout(showTimerRef.current); showTimerRef.current = null; }
+    if (!hideTimerRef.current) {
+      hideTimerRef.current = setTimeout(() => {
+        setShowTimeline(false);
+        hideTimerRef.current = null;
+      }, eventHoverDelay);
+    }
+  };
   
   const safeTags = task.tags || [];
   const taskTags = safeTags.map(tagId => tags.find(t => t.id === tagId)).filter(Boolean);
@@ -158,12 +174,26 @@ export default function TaskCard({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: -100 }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
       className={`group relative rounded-2xl shadow-lg border border-zinc-200 dark:border-zinc-700 hover:shadow-xl transition-all overflow-hidden ${statusConfig[task.status]?.bgClass}`}
     >
       {hasDueMask && (
         <div className={`absolute inset-0 pointer-events-none ${maskClass}`} />
       )}
-      
+
+      {/* 状态修改指示器 */}
+      {changeIndicator && (
+        <div
+          className={`absolute top-2 right-2 w-2.5 h-2.5 rounded-full z-20 ${
+            changeIndicator === 'status-changed'
+              ? 'bg-green-500 ring-2 ring-green-200 dark:ring-green-900'
+              : 'bg-orange-500 ring-2 ring-orange-200 dark:ring-orange-900'
+          }`}
+          title={changeIndicator === 'status-changed' ? '状态已更新' : '内容已修改'}
+        />
+      )}
+
       <div className="relative p-4 z-10">
         <div className="flex items-start gap-3">
           <button
@@ -206,6 +236,15 @@ export default function TaskCard({
               </>
             ) : (
               <>
+                {onCreateEvent && (
+                  <button
+                    onClick={onCreateEvent}
+                    className="p-1.5 rounded-lg text-green-500 hover:bg-green-100 dark:hover:bg-green-900/30 transition-all"
+                    title="生成完成节点"
+                  >
+                    <CircleCheck size={16} />
+                  </button>
+                )}
                 <button
                   onClick={onEdit}
                   className="p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
@@ -244,7 +283,7 @@ export default function TaskCard({
 
         <div className="flex items-center flex-wrap gap-2 mt-3 ml-9">
           {/* 优先级选择器 */}
-          <div className="relative inline-block">
+          <div className="relative inline-block translate-y-[3px]">
             <motion.div
               ref={containerRef}
               className="relative inline-block rounded-full overflow-hidden"
@@ -299,7 +338,7 @@ export default function TaskCard({
           {taskTags.map(tag => tag && (
             <span
               key={tag.id}
-              className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${getTagColorClass(tag)}`}
+              className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 border border-transparent ${getTagColorClass(tag)}`}
             >
               {getTagDisplay(tag)} {tag.name}
             </span>
@@ -315,6 +354,33 @@ export default function TaskCard({
             </div>
           )}
         </div>
+
+        {/* 内联事件时间线 */}
+        <motion.div
+          animate={{
+            height: showTimeline ? 'auto' : 0,
+            opacity: showTimeline ? 1 : 0,
+          }}
+          initial={false}
+          transition={{ duration: 0.3, ease: 'easeInOut' }}
+          className="overflow-hidden"
+        >
+          <div className="border-t border-zinc-100 dark:border-zinc-800" />
+          <div className="px-4 pb-3 pt-2 ml-9">
+            {taskEvents.length === 0 ? (
+              <p className="text-xs text-zinc-400 py-1">暂无事件</p>
+            ) : (
+              <EventTimeline
+                events={taskEvents}
+                tasks={allTasks}
+                compact
+                onToggleComplete={onToggleEventComplete}
+                onEditEvent={onEditEvent}
+                onDeleteEvent={onDeleteEvent}
+              />
+            )}
+          </div>
+        </motion.div>
       </div>
     </motion.div>
   );

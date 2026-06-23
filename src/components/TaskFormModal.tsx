@@ -4,33 +4,13 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Calendar, Flag, Tag as TagIcon, Plus } from 'lucide-react';
 import { useTaskStore, Tag } from '../store/useTaskStore';
+import { getTagDisplay } from '../utils/tagUtils';
+import CreateTagModal from './CreateTagModal';
 
 interface TaskFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   tags: Tag[];
-}
-
-const colorOptions = [
-  { name: 'red', class: 'bg-red-500' },
-  { name: 'orange', class: 'bg-orange-500' },
-  { name: 'amber', class: 'bg-amber-500' },
-  { name: 'yellow', class: 'bg-yellow-500' },
-  { name: 'green', class: 'bg-green-500' },
-  { name: 'emerald', class: 'bg-emerald-500' },
-  { name: 'blue', class: 'bg-blue-500' },
-  { name: 'indigo', class: 'bg-indigo-500' },
-  { name: 'purple', class: 'bg-purple-500' },
-  { name: 'pink', class: 'bg-pink-500' },
-];
-
-const emojiOptions = ['📁', '💼', '🏠', '📚', '💪', '🎨', '💻', '📅', '⚡', '🎯', '🌟', '❤️'];
-
-function getTagDisplay(tag: Tag): string {
-  if (tag.colorType === 'emoji') {
-    return tag.emoji || '📌';
-  }
-  return '●';
 }
 
 export default function TaskFormModal({ isOpen, onClose, tags }: TaskFormModalProps) {
@@ -40,13 +20,11 @@ export default function TaskFormModal({ isOpen, onClose, tags }: TaskFormModalPr
   const [dueDate, setDueDate] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  
+  const [createdBy, setCreatedBy] = useState('');
+  const [assignedTo, setAssignedTo] = useState('');
+
   // 新建标签状态
   const [showNewTagForm, setShowNewTagForm] = useState(false);
-  const [newTagName, setNewTagName] = useState('');
-  const [newTagType, setNewTagType] = useState<'emoji' | 'color'>('emoji');
-  const [newTagEmoji, setNewTagEmoji] = useState('📁');
-  const [newTagColor, setNewTagColor] = useState('blue');
 
   const handleSubmit = () => {
     if (!title.trim()) {
@@ -64,40 +42,21 @@ export default function TaskFormModal({ isOpen, onClose, tags }: TaskFormModalPr
       tags: selectedTags,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      archived: false,      // 添加这一行
-      deleted: false,       // 添加这一行
+      archived: false,
+      deleted: false,
       history: [],
+      createdBy: createdBy.trim() || undefined,
+      assignedTo: assignedTo.trim() || undefined,
     });
-    
+
     setTitle('');
     setDescription('');
     setDueDate('');
     setPriority('medium');
     setSelectedTags([]);
+    setCreatedBy('');
+    setAssignedTo('');
     onClose();
-  };
-
-  const handleCreateTag = () => {
-    if (!newTagName.trim()) return;
-    
-    const newTag: Tag = {
-      id: Date.now().toString(),
-      name: newTagName.trim(),
-      parentId: null,
-      colorType: newTagType,
-      emoji: newTagType === 'emoji' ? newTagEmoji : undefined,
-      color: newTagType === 'color' ? newTagColor : undefined,
-      level: 0,
-      order: tags.length,
-    };
-    
-    addTag(newTag);
-    setSelectedTags([...selectedTags, newTag.id]);
-    setShowNewTagForm(false);
-    setNewTagName('');
-    setNewTagType('emoji');
-    setNewTagEmoji('📁');
-    setNewTagColor('blue');
   };
 
   // 构建标签树
@@ -211,6 +170,34 @@ export default function TaskFormModal({ isOpen, onClose, tags }: TaskFormModalPr
                   </div>
                 </div>
 
+                {/* 发起人 / 作用对象 */}
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400 mb-1">
+                      👤 发起人
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="发起人"
+                      value={createdBy}
+                      onChange={(e) => setCreatedBy(e.target.value)}
+                      className="w-full p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400 mb-1">
+                      🎯 作用对象
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="执行者"
+                      value={assignedTo}
+                      onChange={(e) => setAssignedTo(e.target.value)}
+                      className="w-full p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
@@ -254,112 +241,15 @@ export default function TaskFormModal({ isOpen, onClose, tags }: TaskFormModalPr
       )}
 
       {/* 新建标签弹窗 */}
-      <AnimatePresence>
-        {showNewTagForm && (
-          <>
-            <div 
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60]" 
-              onClick={() => setShowNewTagForm(false)} 
-            />
-            <div className="fixed inset-0 flex items-center justify-center z-[60] pointer-events-none">
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-96 max-w-[90vw] shadow-2xl pointer-events-auto"
-                onClick={e => e.stopPropagation()}
-              >
-                <h3 className="font-bold text-lg mb-4 text-zinc-900 dark:text-white">新建标签</h3>
-                
-                <input
-                  type="text"
-                  placeholder="标签名称"
-                  value={newTagName}
-                  onChange={(e) => setNewTagName(e.target.value)}
-                  className="w-full p-3 border border-zinc-200 dark:border-zinc-700 rounded-xl mb-4 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  autoFocus
-                />
-
-                <div className="flex gap-2 mb-4">
-                  <button
-                    type="button"
-                    onClick={() => setNewTagType('emoji')}
-                    className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
-                      newTagType === 'emoji' 
-                        ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' 
-                        : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                    }`}
-                  >
-                    😊 Emoji
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNewTagType('color')}
-                    className={`flex-1 py-2 rounded-xl flex items-center justify-center gap-2 transition-all ${
-                      newTagType === 'color' 
-                        ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' 
-                        : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                    }`}
-                  >
-                    🎨 颜色
-                  </button>
-                </div>
-
-                {newTagType === 'emoji' ? (
-                  <div className="mb-4">
-                    <label className="text-sm text-zinc-600 dark:text-zinc-400 mb-2 block">选择图标</label>
-                    <div className="grid grid-cols-6 gap-2">
-                      {emojiOptions.map(emoji => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => setNewTagEmoji(emoji)}
-                          className={`text-2xl p-2 rounded-lg transition-all ${
-                            newTagEmoji === emoji ? 'bg-violet-100 dark:bg-violet-900/30' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                          }`}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mb-4">
-                    <label className="text-sm text-zinc-600 dark:text-zinc-400 mb-2 block">选择颜色</label>
-                    <div className="flex flex-wrap gap-2">
-                      {colorOptions.map(color => (
-                        <button
-                          key={color.name}
-                          type="button"
-                          onClick={() => setNewTagColor(color.name)}
-                          className={`w-8 h-8 rounded-full ${color.class} ${
-                            newTagColor === color.name ? 'ring-2 ring-offset-2 ring-zinc-400 dark:ring-offset-zinc-900' : ''
-                          }`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-3">
-                  <button 
-                    onClick={() => setShowNewTagForm(false)} 
-                    className="flex-1 py-2 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={handleCreateTag}
-                    className="flex-1 py-2 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-xl font-medium hover:opacity-90 transition-all"
-                  >
-                    创建标签
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          </>
-        )}
-      </AnimatePresence>
+      <CreateTagModal
+        isOpen={showNewTagForm}
+        onClose={() => setShowNewTagForm(false)}
+        onCreate={(newTag) => {
+          addTag(newTag);
+          setSelectedTags([...selectedTags, newTag.id]);
+        }}
+        animated={true}
+      />
     </AnimatePresence>
   );
 }

@@ -1,7 +1,7 @@
 // src/components/UserMenu.tsx
 import { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import { User, LogOut, Settings, ChevronDown, Mail, Clock } from 'lucide-react';
+import { LogOut, ChevronDown, Mail, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function UserMenu() {
@@ -19,13 +19,11 @@ export default function UserMenu() {
     setLoading(true);
     await supabase.auth.signOut();
     setLoading(false);
-    // 刷新页面
     window.location.reload();
   };
 
   if (!user) return null;
 
-  // 获取用户邮箱的显示名
   const displayName = user.email?.split('@')[0] || '用户';
   const userInitial = displayName.charAt(0).toUpperCase();
 
