@@ -6,6 +6,20 @@ import { Task, Tag } from '../store/useTaskStore';
 // 同步任务到云端（支持删除）
 export async function syncTasksToCloud(userId: string, tasks: Task[]) {
   try {
+    // 保护：本地任务为空且云端有数据时跳过（避免刚加载时的误删）
+    if (!tasks || tasks.length === 0) {
+      const { count, error: checkError } = await supabase
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+      if (checkError) return;
+      // 云端有数据但本地为空 → 跳过，防止清空云端
+      if (count && count > 0) {
+        console.log('🛡️ 同步保护: 本地任务为空但云端有数据，跳过删除');
+        return;
+      }
+    }
+
     // 1. 获取云端该用户的所有任务ID
     const { data: cloudTasks, error: fetchError } = await supabase
       .from('tasks')
@@ -104,6 +118,19 @@ export async function loadTasksFromCloud(userId: string) {
 // 同步标签到云端（支持删除）
 export async function syncTagsToCloud(userId: string, tags: Tag[]) {
   try {
+    // 保护：本地标签为空且云端有数据时跳过
+    if (!tags || tags.length === 0) {
+      const { count, error: checkError } = await supabase
+        .from('tags')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+      if (checkError) return;
+      if (count && count > 0) {
+        console.log('🛡️ 同步保护: 本地标签为空但云端有数据，跳过删除');
+        return;
+      }
+    }
+
     // 1. 获取云端该用户的所有标签ID
     const { data: cloudTags, error: fetchError } = await supabase
       .from('tags')

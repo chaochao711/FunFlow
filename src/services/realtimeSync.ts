@@ -170,8 +170,10 @@ export function subscribeToRealtime(userId: string) {
       const incoming = dbEventToApp(payload.new);
       const existing = events.find((e) => e.id === incoming.id);
 
-      // 用 createdAt 比较避免回环
-      if (existing && incoming.createdAt <= existing.createdAt) return;
+      // 用 updatedAt 比较避免回环（编辑时 updatedAt 会变）
+      const incomingTime = incoming.updatedAt || incoming.createdAt;
+      const existingTime = existing.updatedAt || existing.createdAt;
+      if (existing && incomingTime <= existingTime) return;
 
       setEvents(
         existing
