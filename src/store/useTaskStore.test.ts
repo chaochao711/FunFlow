@@ -30,7 +30,6 @@ describe('useTaskStore', () => {
         updatedAt: new Date().toISOString(),
         archived: false,
         deleted: false,
-        history: [],
       });
 
       const tasks = useTaskStore.getState().tasks;
@@ -45,7 +44,7 @@ describe('useTaskStore', () => {
     it('更新任务字段', () => {
       useTaskStore.getState().addTask({
         id: '1', title: '旧标题', priority: 'low', status: 'pending',
-        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false, history: [],
+        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false,
       });
 
       useTaskStore.getState().updateTask('1', { title: '新标题', priority: 'high' });
@@ -57,7 +56,7 @@ describe('useTaskStore', () => {
     it('完成时自动设置 completedAt', () => {
       useTaskStore.getState().addTask({
         id: '1', title: 'T', priority: 'low', status: 'pending',
-        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false, history: [],
+        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false,
       });
 
       useTaskStore.getState().updateTask('1', { status: 'completed' });
@@ -71,7 +70,7 @@ describe('useTaskStore', () => {
     it('软删除（标记 deleted=true）', () => {
       useTaskStore.getState().addTask({
         id: '1', title: 'T', priority: 'low', status: 'pending',
-        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false, history: [],
+        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false,
       });
 
       useTaskStore.getState().deleteTask('1');
@@ -85,7 +84,7 @@ describe('useTaskStore', () => {
     it('永久删除', () => {
       useTaskStore.getState().addTask({
         id: '1', title: 'T', priority: 'low', status: 'pending',
-        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false, history: [],
+        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false,
       });
 
       useTaskStore.getState().permanentDeleteTask('1');
@@ -99,7 +98,7 @@ describe('useTaskStore', () => {
     it('归档任务', () => {
       useTaskStore.getState().addTask({
         id: '1', title: 'T', priority: 'low', status: 'completed',
-        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false, history: [],
+        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false,
       });
 
       useTaskStore.getState().archiveTask('1');
@@ -111,7 +110,7 @@ describe('useTaskStore', () => {
     it('取消归档', () => {
       useTaskStore.getState().addTask({
         id: '1', title: 'T', priority: 'low', status: 'completed',
-        tags: [], createdAt: '', updatedAt: '', archived: true, deleted: false, history: [],
+        tags: [], createdAt: '', updatedAt: '', archived: true, deleted: false,
       });
 
       useTaskStore.getState().unarchiveTask('1');
@@ -127,7 +126,7 @@ describe('useTaskStore', () => {
     it('从回收站恢复到归档', () => {
       useTaskStore.getState().addTask({
         id: '1', title: 'T', priority: 'low', status: 'pending',
-        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: true, history: [],
+        tags: [], createdAt: '', updatedAt: '', archived: false, deleted: true,
       });
 
       useTaskStore.getState().restoreTask('1');
@@ -144,9 +143,9 @@ describe('useTaskStore', () => {
       useTaskStore.setState({
         tasks: [
           { id: '1', title: '正常', priority: 'low' as const, status: 'pending' as const,
-            tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false, history: [] },
+            tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false },
           { id: '2', title: '已删除', priority: 'low' as const, status: 'pending' as const,
-            tags: [], createdAt: '', updatedAt: '', archived: false, deleted: true, history: [] },
+            tags: [], createdAt: '', updatedAt: '', archived: false, deleted: true },
         ],
       });
 
@@ -175,7 +174,7 @@ describe('useTaskStore', () => {
       });
       useTaskStore.getState().addTask({
         id: '1', title: 'T', priority: 'low', status: 'pending',
-        tags: ['t1'], createdAt: '', updatedAt: '', archived: false, deleted: false, history: [],
+        tags: ['t1'], createdAt: '', updatedAt: '', archived: false, deleted: false,
       });
 
       useTaskStore.getState().deleteTag('t1');
@@ -194,7 +193,7 @@ describe('useTaskStore', () => {
         id: '1', title: 'T', priority: 'low', status: 'completed',
         tags: [], createdAt: '', updatedAt: '',
         completedAt: longAgo.toISOString(),
-        archived: false, deleted: false, history: [],
+        archived: false, deleted: false,
       });
 
       useTaskStore.getState().autoArchiveTasks();
@@ -209,7 +208,7 @@ describe('useTaskStore', () => {
         id: '1', title: 'T', priority: 'low', status: 'in-progress',
         tags: [], createdAt: '', updatedAt: '',
         completedAt: longAgo.toISOString(),
-        archived: false, deleted: false, history: [],
+        archived: false, deleted: false,
       });
 
       useTaskStore.getState().autoArchiveTasks();
@@ -225,7 +224,7 @@ describe('useTaskStore', () => {
         id: '1', title: 'T', priority: 'low', status: 'completed',
         tags: [], createdAt: '', updatedAt: '',
         completedAt: longAgo.toISOString(),
-        archived: false, deleted: false, history: [],
+        archived: false, deleted: false,
       });
 
       useTaskStore.getState().autoArchiveTasks();

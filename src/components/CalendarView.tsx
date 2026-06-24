@@ -47,7 +47,7 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
   const [currentView, setCurrentView] = useState<ViewMode>('dayGridMonth');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showTaskDetail, setShowTaskDetail] = useState(false);
-  const { updateTask, addHistory } = useTaskStore();
+  const { updateTask } = useTaskStore();
   const { events: allEvents, getEventsByTask, addEvent, updateEvent, deleteEvent, toggleEventComplete, reorderEvents } = useEventStore();
 
   // ========== 悬浮面板 ==========
@@ -208,9 +208,8 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
     const newDueDate = endDate.toISOString().split('T')[0];
     if (task && task.dueDate !== newDueDate) {
       updateTask(taskId, { dueDate: newDueDate });
-      addHistory(taskId, 'dueDate', task.dueDate, newDueDate);
     }
-  }, [tasks, updateTask, addHistory]);
+  }, [tasks, updateTask]);
 
   const handleAddEvent = useCallback(() => {
     setShowCreateEvent(true);

@@ -24,7 +24,6 @@ export function dbTaskToApp(item: any): Task {
     archivedAt: item.archived_at,
     deleted: item.deleted,
     deletedAt: item.deleted_at,
-    history: item.history || [],
     createdBy: item.created_by,
     assignedTo: item.assigned_to,
   };
@@ -109,7 +108,6 @@ export async function syncTasksToCloud(userId: string, tasks: Task[]) {
         archived_at: task.archivedAt,
         deleted: task.deleted,
         deleted_at: task.deletedAt,
-        history: task.history,
         created_by: task.createdBy,
         assigned_to: task.assignedTo,
       };

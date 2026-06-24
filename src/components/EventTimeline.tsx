@@ -157,47 +157,45 @@ export default function EventTimeline({
                         isDragOver ? 'ring-2 ring-violet-500' : ''
                       }`}
                     >
-                      {/* 类型标记 */}
-                      {isCompletion ? (
-                        <button
-                          onClick={() => onToggleComplete?.(event.id)}
-                          className="absolute -left-[13px] top-2 cursor-pointer"
-                          title={isDone ? '已完成 — 点击取消' : '点击标记完成'}
-                        >
-                          {isDone ? (
-                            <CheckCircle size={16} className="text-green-500" />
-                          ) : (
-                            <Circle size={16} className="text-zinc-300 dark:text-zinc-500 hover:text-green-400 transition-colors" />
-                          )}
-                        </button>
-                      ) : (
-                        <div className="absolute -left-[13px] top-2">
-                          {event.type === 'idea' ? (
-                            <Lightbulb size={14} className="text-amber-500" />
-                          ) : event.type === 'note' ? (
-                            <StickyNote size={14} className="text-blue-500" />
-                          ) : (
-                            <Flag size={14} className="text-purple-500" />
-                          )}
-                        </div>
-                      )}
-
                       {/* 事件卡片内容 */}
                       <div className={`flex items-start gap-1.5 ${!compact ? 'pl-0' : ''}`}>
-                        {/* 拖拽手柄 */}
+                        {/* 拖拽手柄 — 最左侧 */}
                         {enableDrag && (
                           <span
-                            className="mt-0.5 cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400 transition-colors flex-shrink-0"
+                            className="cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-500 dark:text-zinc-600 dark:hover:text-zinc-400 transition-colors flex-shrink-0 leading-none"
                             onMouseDown={(e) => e.stopPropagation()}
                           >
-                            <GripVertical size={14} />
+                            <GripVertical size={14} className="align-middle" />
                           </span>
                         )}
 
+                        {/* 类型图标 — 紧贴手柄右侧 */}
+                        <span className="flex-shrink-0 leading-none">
+                          {isCompletion ? (
+                            <button
+                              onClick={() => onToggleComplete?.(event.id)}
+                              className="cursor-pointer align-middle"
+                              title={isDone ? '已完成 — 点击取消' : '点击标记完成'}
+                            >
+                              {isDone ? (
+                                <CheckCircle size={14} className="text-green-500" />
+                              ) : (
+                                <Circle size={14} className="text-zinc-300 dark:text-zinc-500 hover:text-green-400 transition-colors" />
+                              )}
+                            </button>
+                          ) : event.type === 'idea' ? (
+                            <Lightbulb size={14} className="text-amber-500 align-middle" />
+                          ) : event.type === 'note' ? (
+                            <StickyNote size={14} className="text-blue-500 align-middle" />
+                          ) : (
+                            <Flag size={14} className="text-purple-500 align-middle" />
+                          )}
+                        </span>
+
                         <div className="flex-1 min-w-0">
-                          {/* 类型标签 + 时间 + 操作按钮 */}
-                          <div className="flex items-center gap-1.5">
-                            <span className={`text-xs ${
+                          {/* 类型名称 + 时间 + 操作按钮 */}
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-medium leading-none ${
                               isCompletion && isDone
                                 ? 'text-green-600 dark:text-green-400 line-through'
                                 : 'text-zinc-500 dark:text-zinc-400'
@@ -205,8 +203,10 @@ export default function EventTimeline({
                               {typeLabel[event.type]}
                             </span>
 
+                            <span className="flex-1" />
+
                             <span
-                              className="ml-auto text-xs text-zinc-400 tabular-nums flex-shrink-0 text-right whitespace-nowrap"
+                              className="text-xs text-zinc-400 tabular-nums flex-shrink-0 whitespace-nowrap"
                               title={full}
                             >
                               {display}
@@ -249,14 +249,6 @@ export default function EventTimeline({
                             </p>
                           )}
 
-                          {!compact && task && (
-                            <button
-                              onClick={() => onTaskClick?.(task.id)}
-                              className="mt-1 text-xs text-violet-600 dark:text-violet-400 hover:underline"
-                            >
-                              📋 {task.title}
-                            </button>
-                          )}
                         </div>
                       </div>
                     </div>

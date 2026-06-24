@@ -1,11 +1,11 @@
 // src/components/TimelineView.tsx — 任务时间线视图（按时间排列任务）
 
 import { useState } from 'react';
-import { Plus, Calendar, Flag } from 'lucide-react';
+import { Plus, Calendar, CheckCircle, Circle, Lightbulb, StickyNote, Flag } from 'lucide-react';
 import { useTaskStore, Task } from '../store/useTaskStore';
 import { useEventStore } from '../store/useEventStore';
 import { getTagDisplay, getTagColorClass } from '../utils/tagUtils';
-import { groupTasksByDate, getDateGroupLabel } from '../utils/dateUtils';
+import { groupTasksByDate, getDateGroupLabel, formatRelativeTime } from '../utils/dateUtils';
 import CreateEventModal from './CreateEventModal';
 
 interface TimelineViewProps {
@@ -13,15 +13,15 @@ interface TimelineViewProps {
   onTaskClick: (taskId: string) => void;
 }
 
-const priorityConfig: Record<string, { icon: string; dotClass: string }> = {
-  high: { icon: '🔥', dotClass: 'bg-red-500' },
-  medium: { icon: '⭐', dotClass: 'bg-amber-500' },
-  low: { icon: '🌱', dotClass: 'bg-emerald-500' },
+const priorityConfig: Record<string, { icon: string }> = {
+  high: { icon: '🔥' },
+  medium: { icon: '⭐' },
+  low: { icon: '🌱' },
 };
 
 export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewProps) {
   const { tags } = useTaskStore();
-  const { addEvent } = useEventStore();
+  const { events, addEvent } = useEventStore();
 
   if (!Array.isArray(tasks)) return null;
   const [showCreateEvent, setShowCreateEvent] = useState(false);
@@ -31,8 +31,7 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
     .filter(t => !t.archived && !t.deleted)
     .map(t => ({ id: t.id, title: t.title }));
 
-  // 按 dueDate || createdAt 分组
-  // 按创建时间分组，截止日期在卡片尾部显示
+  // 按 createdAt 日期分组，截止日期在标签行显示
   const dateGroups = groupTasksByDate(
     tasks.filter(t => !t.deleted),
     (t) => t.createdAt
@@ -82,7 +81,6 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
                       .map(tagId => tags.find(t => t.id === tagId))
                       .filter(Boolean);
                     const isHovered = hoveredId === task.id;
-                    const hasDueDate = !!task.dueDate;
 
                     return (
                       <div
@@ -91,17 +89,22 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
                         onMouseEnter={() => setHoveredId(task.id)}
                         onMouseLeave={() => setHoveredId(null)}
                       >
-                        {/* 时间线圆点（优先级着色） */}
                         <div
-                          className={`absolute -left-[25px] top-2 w-3 h-3 rounded-full border-2 border-white dark:border-zinc-900 ${pConfig.dotClass}`}
-                        />
-
-                        <div
-                          className={`bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-3 cursor-pointer transition-colors ${
-                            isHovered ? 'bg-zinc-100 dark:bg-zinc-700/50' : ''
+                          className={`rounded-xl p-3 cursor-pointer transition-colors relative overflow-hidden ${
+                            task.archived
+                              ? 'bg-zinc-100 dark:bg-zinc-700'
+                              : 'bg-zinc-50 dark:bg-zinc-800/50'
+                          } ${
+                            isHovered ? (task.archived ? 'bg-zinc-200 dark:bg-zinc-600' : 'bg-zinc-100 dark:bg-zinc-700/50') : ''
                           } ${task.status === 'completed' ? 'opacity-80' : ''}`}
                           onClick={() => onTaskClick(task.id)}
                         >
+                          {/* 归档水印底纹 */}
+                          {task.archived && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
+                              <span className="text-6xl opacity-[0.06] dark:opacity-[0.08]">📦</span>
+                            </div>
+                          )}
                           {/* 标题行 */}
                           <div className="flex items-center gap-2 mb-1">
                             {task.archived && <span className="text-xs">📦</span>}
@@ -115,20 +118,10 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
                             >
                               {task.title}
                             </h4>
-                            {/* 尾端：截止日期（如有） */}
-                            {hasDueDate && task.dueDate && (
-                              <span
-                                className="text-xs text-zinc-400 flex-shrink-0 cursor-help"
-                                title={`截止日期: ${task.dueDate}`}
-                              >
-                                <Calendar size={10} className="inline mr-0.5" />
-                                {task.dueDate}
-                              </span>
-                            )}
                           </div>
 
                           {/* 标签 + 状态 */}
-                          <div className="flex items-center gap-2 ml-5 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {/* 状态标签 */}
                             <span className={`text-xs px-1.5 py-0.5 rounded-full ${
                               task.status === 'completed'
@@ -152,13 +145,59 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
 
                             {/* 截止日期图标 */}
                             {task.dueDate && (
-                              <span className="flex items-center gap-1 text-xs text-zinc-400">
+                              <span className="flex items-center gap-1 text-xs text-zinc-400 cursor-help" title={`截止日期: ${task.dueDate}`}>
                                 <Calendar size={10} />
                                 {task.dueDate}
                               </span>
                             )}
                           </div>
                         </div>
+
+                        {/* 事件子时间线 */}
+                        {(() => {
+                          const taskEvents = events
+                            .filter(e => e.taskId === task.id)
+                            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                          if (taskEvents.length === 0) return null;
+                          return (
+                            <div className="relative pl-4 ml-1 mt-2 border-l-[2px] border-zinc-200 dark:border-zinc-700 space-y-2">
+                              {taskEvents.map(event => {
+                                const { display } = formatRelativeTime(event.createdAt);
+                                return (
+                                  <div key={event.id} className="relative pl-2 py-0.5">
+                                    {/* 事件类型标记 */}
+                                    <div className="absolute -left-[9px] top-1.5">
+                                      {event.type === 'completion' ? (
+                                        event.completed
+                                          ? <CheckCircle size={12} className="text-green-500" />
+                                          : <Circle size={12} className="text-zinc-300 dark:text-zinc-500" />
+                                      ) : event.type === 'idea' ? (
+                                        <Lightbulb size={11} className="text-amber-500" />
+                                      ) : event.type === 'note' ? (
+                                        <StickyNote size={11} className="text-blue-500" />
+                                      ) : (
+                                        <Flag size={11} className="text-purple-500" />
+                                      )}
+                                    </div>
+                                    {/* 事件内容 */}
+                                    <div className="flex items-start gap-2 min-w-0">
+                                      <p className={`text-xs flex-1 min-w-0 whitespace-pre-wrap leading-relaxed ${
+                                        event.type === 'completion' && event.completed
+                                          ? 'line-through text-zinc-400 dark:text-zinc-500'
+                                          : 'text-zinc-600 dark:text-zinc-400'
+                                      }`}>
+                                        {event.content}
+                                      </p>
+                                      <span className="text-xs text-zinc-400 tabular-nums flex-shrink-0 whitespace-nowrap">
+                                        {display}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })}
@@ -176,7 +215,7 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
         onCreate={(eventData) => {
           const now = new Date().toISOString();
           addEvent({
-            id: Date.now().toString(),
+            id: crypto.randomUUID(),
             ...eventData,
             createdAt: now,
             timestamp: now,

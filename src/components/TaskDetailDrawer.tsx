@@ -1,8 +1,8 @@
-// src/components/TaskDetailDrawer.tsx — 任务详情抽屉（直接编辑、退出自动保存）
+// src/components/TaskDetailDrawer.tsx — 任务详情弹窗（直接编辑、双栏布局、退出自动保存）
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Clock, RotateCcw, Tag as TagIcon, Calendar, Plus } from 'lucide-react';
+import { X, Tag as TagIcon, Calendar, Plus } from 'lucide-react';
 import { useTaskStore, Task, Tag } from '../store/useTaskStore';
 import { useEventStore } from '../store/useEventStore';
 import { getTagDisplay } from '../utils/tagUtils';
@@ -18,20 +18,28 @@ interface TaskDetailDrawerProps {
 }
 
 export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDrawerProps) {
-  const { tasks, updateTask, addHistory, restoreVersion, addTag } = useTaskStore();
+  const { tasks, updateTask, addTag } = useTaskStore();
   const { events, addEvent, updateEvent, deleteEvent, toggleEventComplete, getEventsByTask, reorderEvents } = useEventStore();
   const task = tasks.find(t => t.id === taskId);
   const [editData, setEditData] = useState<Partial<Task>>({});
   const [showNewTagForm, setShowNewTagForm] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [showEvents, setShowEvents] = useState(true);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [editEvent, setEditEvent] = useState<TaskEvent | null>(null);
 
-  // 切换任务时重置编辑状态
+  // 切换任务时重置编辑状态 + 锁住背景滚动穿透
   useEffect(() => {
     setEditData({});
-    setShowHistory(false);
+    if (taskId) {
+      const html = document.documentElement;
+      const body = document.body;
+      const prevOverflow = body.style.overflow;
+      body.style.overflow = 'hidden';
+      html.style.overflow = 'hidden';
+      return () => {
+        body.style.overflow = prevOverflow;
+        html.style.overflow = '';
+      };
+    }
   }, [taskId]);
 
   if (!task) return null;
@@ -44,7 +52,6 @@ export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDr
     Object.entries(editData).forEach(([key, value]) => {
       if (value !== undefined && JSON.stringify(value) !== JSON.stringify(task[key as keyof Task])) {
         changes[key as keyof Task] = value as any;
-        addHistory(task.id, key, task[key as keyof Task], value);
       }
     });
     if (Object.keys(changes).length > 0) {
@@ -104,199 +111,212 @@ export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDr
     <AnimatePresence>
       {taskId && (
         <>
-          <div className="fixed inset-0 bg-black/50 z-50" onClick={handleClose} />
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={handleClose} />
           <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 20 }}
-            className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white dark:bg-zinc-900 shadow-2xl z-50 flex flex-col"
+            initial={{ scale: 0.95, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.95, opacity: 0, y: 20 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="fixed inset-4 sm:inset-6 md:inset-8 z-50 m-auto w-full max-w-4xl bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl flex flex-col max-h-[calc(100vh-48px)]"
+            onClick={(e) => e.stopPropagation()}
           >
             {/* 头部 */}
-            <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-zinc-900 dark:text-white">任务详情</h2>
-                <button
-                  onClick={() => setShowHistory(!showHistory)}
-                  className={`p-1.5 rounded-lg transition-colors ${
-                    showHistory
-                      ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400'
-                      : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400'
-                  }`}
-                  title="编辑历史"
-                >
-                  <Clock size={16} />
-                </button>
               </div>
               <button onClick={handleClose} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg">
                 <X size={20} />
               </button>
             </div>
 
-            {/* 内容 */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* 标题 — 直接编辑 */}
-              <div>
-                <label className="text-xs text-zinc-500 dark:text-zinc-400">标题</label>
-                <input
-                  type="text"
-                  defaultValue={task.title}
-                  onChange={(e) => setField('title', e.target.value)}
-                  className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-                />
-              </div>
+            {/* 双栏内容 */}
+            <div className="flex-1 overflow-hidden p-4 md:p-6">
+              <div className="flex flex-col md:flex-row gap-6 h-full min-h-0">
+                {/* ===== 左栏：编辑字段 ===== */}
+                <div className="flex-1 space-y-4 overflow-y-auto [overscroll-behavior:contain] min-h-0 pr-1">
+                  {/* 标题 */}
+                  <div>
+                    <label className="text-xs text-zinc-500 dark:text-zinc-400">标题</label>
+                    <input
+                      type="text"
+                      defaultValue={task.title}
+                      onChange={(e) => setField('title', e.target.value)}
+                      className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                  </div>
 
-              {/* 描述 — 直接编辑 */}
-              <div>
-                <label className="text-xs text-zinc-500 dark:text-zinc-400">描述</label>
-                <textarea
-                  defaultValue={task.description}
-                  rows={4}
-                  onChange={(e) => setField('description', e.target.value)}
-                  placeholder="添加描述..."
-                  className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white resize-none focus:outline-none focus:ring-2 focus:ring-violet-500"
-                />
-              </div>
+                  {/* 描述 */}
+                  <div>
+                    <label className="text-xs text-zinc-500 dark:text-zinc-400">描述</label>
+                    <textarea
+                      defaultValue={task.description}
+                      rows={4}
+                      onChange={(e) => setField('description', e.target.value)}
+                      placeholder="添加描述..."
+                      className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white resize-none focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                  </div>
 
-              {/* 发起人 / 作用对象 */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-zinc-500 dark:text-zinc-400">发起人</label>
-                  <input
-                    type="text"
-                    defaultValue={task.createdBy || ''}
-                    onChange={(e) => setField('createdBy', e.target.value || undefined)}
-                    placeholder="发起人"
-                    className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-zinc-500 dark:text-zinc-400">作用对象</label>
-                  <input
-                    type="text"
-                    defaultValue={task.assignedTo || ''}
-                    onChange={(e) => setField('assignedTo', e.target.value || undefined)}
-                    placeholder="执行者"
-                    className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  />
-                </div>
-              </div>
+                  {/* 发起人 / 作用对象 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-zinc-500 dark:text-zinc-400">发起人</label>
+                      <input
+                        type="text"
+                        defaultValue={task.createdBy || ''}
+                        onChange={(e) => setField('createdBy', e.target.value || undefined)}
+                        placeholder="发起人"
+                        className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-500 dark:text-zinc-400">作用对象</label>
+                      <input
+                        type="text"
+                        defaultValue={task.assignedTo || ''}
+                        onChange={(e) => setField('assignedTo', e.target.value || undefined)}
+                        placeholder="执行者"
+                        className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                      />
+                    </div>
+                  </div>
 
-              {/* 截止日期 — 直接编辑 */}
-              <div>
-                <label className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                  <Calendar size={12} /> 截止日期
-                </label>
-                <input
-                  type="date"
-                  defaultValue={task.dueDate}
-                  onChange={(e) => setField('dueDate', e.target.value)}
-                  className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
-                />
-              </div>
+                  {/* 截止日期 */}
+                  <div>
+                    <label className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                      <Calendar size={12} /> 截止日期
+                    </label>
+                    <input
+                      type="date"
+                      defaultValue={task.dueDate}
+                      onChange={(e) => setField('dueDate', e.target.value)}
+                      className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                    />
+                  </div>
 
-              {/* 标签 — 直接编辑 */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                    <TagIcon size={12} /> 标签
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowNewTagForm(true)}
-                    className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 flex items-center gap-1"
-                  >
-                    <Plus size={12} /> 新建标签
-                  </button>
-                </div>
-                <div className="border border-zinc-200 dark:border-zinc-700 rounded-xl max-h-48 overflow-y-auto p-2">
-                  {buildTagTree().length === 0 ? (
-                    <p className="text-sm text-zinc-400 text-center py-4">暂无标签，点击"新建标签"创建</p>
-                  ) : (
-                    buildTagTree().map(tag => renderTagOption({ ...tag, level: 0 }))
-                  )}
-                </div>
-              </div>
+                  {/* 状态 */}
+                  <div>
+                    <label className="text-xs text-zinc-500 dark:text-zinc-400">状态</label>
+                    <div className="flex gap-2 mt-1">
+                      {(['pending', 'in-progress', 'completed'] as const).map(s => (
+                        <button
+                          key={s}
+                          onClick={() => setField('status', s)}
+                          className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                            (editData.status ?? task.status) === s
+                              ? s === 'completed'
+                                ? 'bg-green-500 text-white'
+                                : s === 'in-progress'
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-zinc-500 text-white'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+                          }`}
+                        >
+                          {s === 'pending' ? '未开始' : s === 'in-progress' ? '进行中' : '已完成'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-              {/* 事件时间线（混合排序，支持拖拽） */}
-              {(() => {
-                const taskEvents = getEventsByTask(task.id);
-                return (
+                  {/* 优先级 */}
+                  <div>
+                    <label className="text-xs text-zinc-500 dark:text-zinc-400">优先级</label>
+                    <div className="flex gap-2 mt-1">
+                      {(['high', 'medium', 'low'] as const).map(p => (
+                        <button
+                          key={p}
+                          onClick={() => setField('priority', p)}
+                          className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
+                            (editData.priority ?? task.priority) === p
+                              ? p === 'high'
+                                ? 'bg-red-500 text-white'
+                                : p === 'medium'
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-emerald-500 text-white'
+                              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+                          }`}
+                        >
+                          {p === 'high' ? '🔥 高' : p === 'medium' ? '⭐ 中' : '🌱 低'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 标签 */}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                        📅 事件 ({taskEvents.length})
-                        {taskEvents.filter(e => e.type === 'completion').length > 0 && (
-                          <span className="text-zinc-400 font-normal">
-                            · 完成 {taskEvents.filter(e => e.completed).length}/{taskEvents.filter(e => e.type === 'completion').length}
-                          </span>
-                        )}
-                      </span>
+                      <label className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                        <TagIcon size={12} /> 标签
+                      </label>
                       <button
                         type="button"
-                        onClick={() => setShowCreateEvent(true)}
+                        onClick={() => setShowNewTagForm(true)}
                         className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 flex items-center gap-1"
                       >
-                        <Plus size={12} /> 添加
+                        <Plus size={12} /> 新建标签
                       </button>
                     </div>
-                    {taskEvents.length > 0 && (
-                      <EventTimeline
-                        events={taskEvents}
-                        tasks={tasks}
-                        onToggleComplete={(id) => toggleEventComplete(id)}
-                        onEditEvent={(evt) => setEditEvent(evt)}
-                        onDeleteEvent={(id) => { if (confirm('删除此事件？')) deleteEvent(id); }}
-                        onReorder={(orderedIds) => reorderEvents(task.id, orderedIds)}
-                      />
-                    )}
+                    <div className="border border-zinc-200 dark:border-zinc-700 rounded-xl max-h-48 overflow-y-auto p-2">
+                      {buildTagTree().length === 0 ? (
+                        <p className="text-sm text-zinc-400 text-center py-4">暂无标签，点击"新建标签"创建</p>
+                      ) : (
+                        buildTagTree().map(tag => renderTagOption({ ...tag, level: 0 }))
+                      )}
+                    </div>
                   </div>
-                );
-              })()}
 
-              {/* 编辑历史（可折叠） */}
-              {showHistory && (
-                <div>
-                  <div className="flex items-center gap-1 mb-2">
-                    <Clock size={12} className="text-zinc-400" />
-                    <label className="text-xs text-zinc-500 dark:text-zinc-400">编辑历史</label>
-                  </div>
-                  <div className="space-y-2">
-                    {task.history.length === 0 ? (
-                      <p className="text-sm text-zinc-400">暂无编辑记录</p>
-                    ) : (
-                      task.history.slice(0, 10).map(record => (
-                        <div key={record.id} className="text-sm p-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <span className="text-zinc-600 dark:text-zinc-300">
-                                修改了 {record.field}:
-                              </span>
-                              <span className="text-zinc-400 line-through ml-1">{String(record.oldValue) || '空'}</span>
-                              <span className="text-zinc-600 mx-1">→</span>
-                              <span className="text-zinc-700 dark:text-zinc-200">{String(record.newValue) || '空'}</span>
-                            </div>
-                            <button
-                              onClick={() => {
-                                if (confirm('恢复到此版本？')) {
-                                  restoreVersion(task.id, record.id);
-                                }
-                              }}
-                              className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
-                              title="恢复到此版本"
-                            >
-                              <RotateCcw size={12} className="text-violet-500" />
-                            </button>
-                          </div>
-                          <div className="text-xs text-zinc-400 mt-1">
-                            {new Date(record.timestamp).toLocaleString()}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
                 </div>
-              )}
+
+                {/* 分隔线 */}
+                <div className="hidden md:block w-px bg-zinc-200 dark:bg-zinc-800 flex-shrink-0" />
+                {/* ===== 右栏：事件时间线 ===== */}
+                <div className="flex-1 flex flex-col min-h-0">
+                  {(() => {
+                    const taskEvents = getEventsByTask(task.id);
+                    return (
+                      <>
+                        {/* 固定头部：不参与滚动 */}
+                        <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                          <span className="text-sm font-medium text-zinc-900 dark:text-white flex items-center gap-1">
+                            📅 事件
+                            <span className="text-xs text-zinc-400 font-normal">({taskEvents.length})</span>
+                            {taskEvents.filter(e => e.type === 'completion').length > 0 && (
+                              <span className="text-xs text-zinc-400 font-normal">
+                                · 完成 {taskEvents.filter(e => e.completed).length}/{taskEvents.filter(e => e.type === 'completion').length}
+                              </span>
+                            )}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowCreateEvent(true)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-lg text-xs font-medium hover:opacity-90 transition-all"
+                          >
+                            <Plus size={12} /> 添加事件
+                          </button>
+                        </div>
+                        {/* 滚动区域：事件列表，日期标题可置顶 */}
+                        <div className="flex-1 overflow-y-auto [overscroll-behavior:contain] min-h-0">
+                          {taskEvents.length > 0 ? (
+                            <EventTimeline
+                              events={taskEvents}
+                              tasks={tasks}
+                              onToggleComplete={(id) => toggleEventComplete(id)}
+                              onEditEvent={(evt) => setEditEvent(evt)}
+                            onDeleteEvent={(id) => { if (confirm('删除此事件？')) deleteEvent(id); }}
+                            onReorder={(orderedIds) => reorderEvents(task.id, orderedIds)}
+                          />
+                        ) : (
+                          <div className="text-center py-12 text-zinc-400 text-sm">
+                            暂无事件
+                          </div>
+                        )}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
             </div>
           </motion.div>
         </>
@@ -318,7 +338,7 @@ export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDr
         onCreate={(eventData) => {
           const now = new Date().toISOString();
           addEvent({
-            id: Date.now().toString(),
+            id: crypto.randomUUID(),
             ...eventData,
             createdAt: now,
             timestamp: now,

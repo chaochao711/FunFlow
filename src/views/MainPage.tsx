@@ -64,8 +64,6 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
   };
 
   const activeTasks = tasks.filter(t => !t.archived && !t.deleted);
-  const archivedTasks = tasks.filter(t => t.archived && !t.deleted);
-  const trashedTasks = tasks.filter(t => t.deleted);
 
   // ========== 辅助函数 ==========
 
@@ -145,24 +143,27 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
 
   // ========== 筛选排序 ==========
 
-  const filteredAndSortedTasks = useMemo(() => {
+  const filteredTasks = useMemo(() => {
     const expandedTagIds = selectedTags.length > 0
       ? getExpandedTagIds(selectedTags, tags)
       : [];
 
-    let filtered = activeTasks.filter(task => {
+    return tasks.filter(t => !t.deleted).filter(task => {
+      // 搜索匹配（标题 + 发起人 + 执行者）
       if (!matchesSearch(task.title, searchQuery, useRegex) &&
           !matchesSearch(task.createdBy || '', searchQuery, useRegex) &&
           !matchesSearch(task.assignedTo || '', searchQuery, useRegex)) return false;
+      // 状态筛选
       if (filterStatus && task.status !== filterStatus) return false;
+      // 优先级筛选
       if (filterPriority && task.priority !== filterPriority) return false;
-
+      // 标签筛选（含子标签展开）
       if (expandedTagIds.length > 0) {
         const taskTags = task.tags || [];
         const hasMatchingTag = taskTags.some(tagId => expandedTagIds.includes(tagId));
         if (!hasMatchingTag) return false;
       }
-
+      // 日期筛选
       const today = new Date().toISOString().split('T')[0];
       if (dateFilter === 'today') {
         if (task.dueDate !== today) return false;
@@ -171,10 +172,12 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
       } else if (dateFilter === 'overdue') {
         if (!task.dueDate || task.dueDate >= today || task.status === 'completed') return false;
       }
-
       return true;
     });
+  }, [tasks, searchQuery, useRegex, filterStatus, filterPriority, selectedTags, tags, dateFilter]);
 
+  const filteredAndSortedTasks = useMemo(() => {
+    const activeFiltered = filteredTasks.filter(t => !t.archived);
     const getStatusOrder = (task: any, today: string) => {
       if (task.status === 'completed') return 4;
       if (task.status === 'pending') return 3;
@@ -186,7 +189,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
     const priorityOrderValue = { high: 1, medium: 2, low: 3 };
     const todayStr = new Date().toISOString().split('T')[0];
 
-    filtered.sort((a, b) => {
+    activeFiltered.sort((a, b) => {
       if (sortBy === 'status') {
         const aOrder = getStatusOrder(a, todayStr);
         const bOrder = getStatusOrder(b, todayStr);
@@ -215,8 +218,8 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
       }
     });
 
-    return filtered;
-  }, [activeTasks, searchQuery, useRegex, filterStatus, filterPriority, selectedTags, tags, dateFilter, sortBy]);
+    return activeFiltered;
+  }, [filteredTasks, sortBy]);
 
   const sortOptions = [
     { value: 'status', label: '📊 按状态' },
@@ -358,23 +361,75 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
                 </button>
               </div>
 
+              {/* 筛选指示 — 视图切换按钮右侧 */}
+              {hasActiveFilters && (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="text-zinc-400 dark:text-zinc-500">当前筛选:</span>
+                  {dateFilter === 'overdue' && (
+                    <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center gap-1">
+                      ⚠️ 已逾期
+                      <button onClick={() => setDateFilter(null)} className="hover:text-red-800"><X size={12} /></button>
+                    </span>
+                  )}
+                  {dateFilter === 'today' && (
+                    <span className="px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full flex items-center gap-1">
+                      今日截止
+                      <button onClick={() => setDateFilter(null)} className="hover:text-orange-800"><X size={12} /></button>
+                    </span>
+                  )}
+                  {dateFilter === 'upcoming' && (
+                    <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center gap-1">
+                      今日及以后
+                      <button onClick={() => setDateFilter(null)} className="hover:text-blue-800"><X size={12} /></button>
+                    </span>
+                  )}
+                  {filterPriority && (
+                    <span className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center gap-1">
+                      {filterPriority === 'high' ? '🔥 高' : filterPriority === 'medium' ? '⭐ 中' : '🌱 低'}优先级
+                      <button onClick={() => setFilterPriority(null)} className="hover:text-zinc-600"><X size={12} /></button>
+                    </span>
+                  )}
+                  {filterStatus && (
+                    <span className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center gap-1">
+                      {filterStatus === 'pending' ? '📋 未开始' : filterStatus === 'in-progress' ? '🔄 进行中' : '✅ 已完成'}
+                      <button onClick={() => setFilterStatus(null)} className="hover:text-zinc-600"><X size={12} /></button>
+                    </span>
+                  )}
+                  {selectedTags.map(tagId => {
+                    const tag = tags.find(t => t.id === tagId);
+                    return tag && (
+                      <span key={tagId} className="px-2 py-1 bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded-full flex items-center gap-1">
+                        {tag.colorType === 'emoji' ? tag.emoji : '🏷️'} {getTagDisplayName(tagId, tags)}
+                        <button onClick={() => toggleTag(tagId)} className="hover:text-violet-800"><X size={12} /></button>
+                      </span>
+                    );
+                  })}
+                  {searchQuery && (
+                    <span className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center gap-1">
+                      搜索: {searchQuery}
+                      <button onClick={() => setSearchQuery('')} className="hover:text-zinc-600"><X size={12} /></button>
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-2">
-                {archivedTasks.length > 0 && (
+                {tasks.filter(t => t.archived && !t.deleted).length > 0 && (
                   <button
                     onClick={handleArchiveClick}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
                   >
                     <Archive size={14} />
-                    归档 ({archivedTasks.length})
+                    归档 ({tasks.filter(t => t.archived && !t.deleted).length})
                   </button>
                 )}
-                {trashedTasks.length > 0 && (
+                {tasks.filter(t => t.deleted).length > 0 && (
                   <button
                     onClick={handleTrashClick}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-full text-sm hover:bg-red-100 dark:hover:bg-red-900/30 transition-all"
                   >
                     <Trash2 size={14} />
-                    回收站 ({trashedTasks.length})
+                    回收站 ({tasks.filter(t => t.deleted).length})
                   </button>
                 )}
               </div>
@@ -382,12 +437,12 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
 
             {viewMode === 'timeline' ? (
               <TimelineView
-                tasks={tasks}
+                tasks={filteredTasks}
                 onTaskClick={(taskId) => setSelectedTask(taskId)}
               />
             ) : viewMode === 'calendar' ? (
               <CalendarView
-                tasks={tasks.filter(t => !t.deleted)}
+                tasks={filteredTasks}
                 tags={tags}
                 onTaskClick={(taskId) => setSelectedTask(taskId)}
               />
@@ -482,57 +537,6 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
                   </div>
                 </div>
 
-                {hasActiveFilters && (
-                  <div className="flex flex-wrap items-center gap-2 mb-4 text-xs">
-                    <span className="text-zinc-500 dark:text-zinc-400">当前筛选:</span>
-                    {dateFilter === 'overdue' && (
-                      <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-full flex items-center gap-1">
-                        ⚠️ 已逾期
-                        <button onClick={() => setDateFilter(null)} className="hover:text-red-800"><X size={12} /></button>
-                      </span>
-                    )}
-                    {dateFilter === 'today' && (
-                      <span className="px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full flex items-center gap-1">
-                        今日截止
-                        <button onClick={() => setDateFilter(null)} className="hover:text-orange-800"><X size={12} /></button>
-                      </span>
-                    )}
-                    {dateFilter === 'upcoming' && (
-                      <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center gap-1">
-                        今日及以后
-                        <button onClick={() => setDateFilter(null)} className="hover:text-blue-800"><X size={12} /></button>
-                      </span>
-                    )}
-                    {filterPriority && (
-                      <span className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center gap-1">
-                        {filterPriority === 'high' ? '🔥 高' : filterPriority === 'medium' ? '⭐ 中' : '🌱 低'}优先级
-                        <button onClick={() => setFilterPriority(null)} className="hover:text-zinc-600"><X size={12} /></button>
-                      </span>
-                    )}
-                    {filterStatus && (
-                      <span className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center gap-1">
-                        {filterStatus === 'pending' ? '📋 未开始' : filterStatus === 'in-progress' ? '🔄 进行中' : '✅ 已完成'}
-                        <button onClick={() => setFilterStatus(null)} className="hover:text-zinc-600"><X size={12} /></button>
-                      </span>
-                    )}
-                    {selectedTags.map(tagId => {
-                      const tag = tags.find(t => t.id === tagId);
-                      return tag && (
-                        <span key={tagId} className="px-2 py-1 bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 rounded-full flex items-center gap-1">
-                          {tag.colorType === 'emoji' ? tag.emoji : '🏷️'} {getTagDisplayName(tagId, tags)}
-                          <button onClick={() => toggleTag(tagId)} className="hover:text-violet-800"><X size={12} /></button>
-                        </span>
-                      );
-                    })}
-                    {searchQuery && (
-                      <span className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center gap-1">
-                        搜索: {searchQuery}
-                        <button onClick={() => setSearchQuery('')} className="hover:text-zinc-600"><X size={12} /></button>
-                      </span>
-                    )}
-                  </div>
-                )}
-
                 <div className="space-y-3">
                   {filteredAndSortedTasks.length === 0 ? (
                     <div className="text-center py-20">
@@ -623,7 +627,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
         onCreate={(eventData) => {
           const now = new Date().toISOString();
           addEvent({
-            id: Date.now().toString(),
+            id: crypto.randomUUID(),
             ...eventData,
             createdAt: now,
             timestamp: now,

@@ -19,18 +19,8 @@ export interface Task {
   archivedAt?: string;
   deleted: boolean;
   deletedAt?: string;
-  history: TaskHistory[];
   createdBy?: string;       // 发起人
   assignedTo?: string;       // 作用对象
-}
-
-export interface TaskHistory {
-  id: string;
-  taskId: string;
-  field: string;
-  oldValue: any;
-  newValue: any;
-  timestamp: string;
 }
 
 export interface Tag {
@@ -69,9 +59,7 @@ interface TaskStore {
   archiveTask: (id: string) => void;
   unarchiveTask: (id: string) => void;
   autoArchiveTasks: () => void;
-  addHistory: (taskId: string, field: string, oldValue: any, newValue: any) => void;
-  restoreVersion: (taskId: string, historyId: string) => void;
-  emptyTrash: () => void;  // 新增：清空回收站
+  emptyTrash: () => void;
   
   // Tag Actions
   addTag: (tag: Tag) => void;
@@ -122,7 +110,7 @@ export const useTaskStore = create<TaskStore>()(
       addTask: (task) => {
         useSyncStore.getState().markTaskDirty(task.id);
         return set((state) => ({
-          tasks: [{ ...task, archived: false, deleted: false, history: task.history || [] }, ...state.tasks]
+          tasks: [{ ...task, archived: false, deleted: false }, ...state.tasks]
         }));
       },
 
@@ -219,47 +207,6 @@ export const useTaskStore = create<TaskStore>()(
           useSyncStore.getState().markTasksDirty(toArchive);
         }
         set({ tasks: updatedTasks });
-      },
-
-      addHistory: (taskId, field, oldValue, newValue) => {
-        useSyncStore.getState().markTaskDirty(taskId);
-        return set((state) => ({
-          tasks: state.tasks.map((task) =>
-            task.id === taskId
-              ? {
-                  ...task,
-                  history: [
-                    {
-                      id: Date.now().toString(),
-                      taskId,
-                      field,
-                      oldValue,
-                      newValue,
-                      timestamp: new Date().toISOString(),
-                    },
-                    ...(task.history || []),
-                  ],
-                }
-              : task
-          ),
-        }));
-      },
-
-      restoreVersion: (taskId, historyId) => {
-        useSyncStore.getState().markTaskDirty(taskId);
-        return set((state) => {
-          const task = state.tasks.find((t) => t.id === taskId);
-          const historyEntry = task?.history?.find((h) => h.id === historyId);
-          if (!task || !historyEntry) return state;
-
-          return {
-            tasks: state.tasks.map((t) =>
-              t.id === taskId
-                ? { ...t, [historyEntry.field]: historyEntry.oldValue, updatedAt: new Date().toISOString() }
-                : t
-            ),
-          };
-        });
       },
 
       // 清空回收站（仅本地移除，云端保留 7 天）

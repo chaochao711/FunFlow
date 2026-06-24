@@ -44,7 +44,6 @@ export default function TaskFormModal({ isOpen, onClose, tags }: TaskFormModalPr
       updatedAt: new Date().toISOString(),
       archived: false,
       deleted: false,
-      history: [],
       createdBy: createdBy.trim() || undefined,
       assignedTo: assignedTo.trim() || undefined,
     });
