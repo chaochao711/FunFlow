@@ -19,7 +19,7 @@ interface TaskDetailDrawerProps {
 
 export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDrawerProps) {
   const { tasks, updateTask, addHistory, restoreVersion, addTag } = useTaskStore();
-  const { events, addEvent, updateEvent, deleteEvent, toggleEventComplete, getEventsByTask } = useEventStore();
+  const { events, addEvent, updateEvent, deleteEvent, toggleEventComplete, getEventsByTask, reorderEvents } = useEventStore();
   const task = tasks.find(t => t.id === taskId);
   const [editData, setEditData] = useState<Partial<Task>>({});
   const [showNewTagForm, setShowNewTagForm] = useState(false);
@@ -218,66 +218,39 @@ export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDr
                 </div>
               </div>
 
-              {/* 完成节点 + 事件 */}
+              {/* 事件时间线（混合排序，支持拖拽） */}
               {(() => {
                 const taskEvents = getEventsByTask(task.id);
-                const completions = taskEvents.filter(e => e.type === 'completion');
-                const otherEvents = taskEvents.filter(e => e.type !== 'completion');
-                const doneCount = completions.filter(e => e.completed).length;
-
                 return (
-                  <>
-                    {/* 完成节点 */}
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                          ○ 完成节点 {completions.length > 0 && `(${doneCount}/${completions.length})`}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowCreateEvent(true)}
-                          className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 flex items-center gap-1"
-                        >
-                          <Plus size={12} /> 添加
-                        </button>
-                      </div>
-                      {completions.length === 0 ? (
-                        <p className="text-xs text-zinc-400 py-2">暂无完成节点</p>
-                      ) : (
-                        <EventTimeline
-                          events={completions}
-                          tasks={tasks}
-                          onToggleComplete={(id) => toggleEventComplete(id)}
-                          onEditEvent={(evt) => setEditEvent(evt)}
-                          onDeleteEvent={(id) => { if (confirm('删除此完成节点？')) deleteEvent(id); }}
-                          compact
-                        />
-                      )}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                        📅 事件 ({taskEvents.length})
+                        {taskEvents.filter(e => e.type === 'completion').length > 0 && (
+                          <span className="text-zinc-400 font-normal">
+                            · 完成 {taskEvents.filter(e => e.completed).length}/{taskEvents.filter(e => e.type === 'completion').length}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowCreateEvent(true)}
+                        className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 flex items-center gap-1"
+                      >
+                        <Plus size={12} /> 添加
+                      </button>
                     </div>
-
-                    {/* 分隔 */}
-                    {completions.length > 0 && otherEvents.length > 0 && (
-                      <div className="border-b border-zinc-100 dark:border-zinc-800" />
+                    {taskEvents.length > 0 && (
+                      <EventTimeline
+                        events={taskEvents}
+                        tasks={tasks}
+                        onToggleComplete={(id) => toggleEventComplete(id)}
+                        onEditEvent={(evt) => setEditEvent(evt)}
+                        onDeleteEvent={(id) => { if (confirm('删除此事件？')) deleteEvent(id); }}
+                        onReorder={(orderedIds) => reorderEvents(task.id, orderedIds)}
+                      />
                     )}
-
-                    {/* 其他事件 */}
-                    {otherEvents.length > 0 && (
-                      <div>
-                        <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                          📅 事件 ({otherEvents.length})
-                        </span>
-                        <div className="mt-2">
-                          <EventTimeline
-                            events={otherEvents}
-                            tasks={tasks}
-                            onEditEvent={(evt) => setEditEvent(evt)}
-                            onDeleteEvent={(id) => { if (confirm('删除此事件？')) deleteEvent(id); }}
-                            compact
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </>
+                  </div>
                 );
               })()}
 

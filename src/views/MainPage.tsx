@@ -591,6 +591,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
                         changeIndicator={recentChanges[task.id]}
                         allTasks={tasks}
                         taskEvents={allEvents.filter(e => e.taskId === task.id)}
+                        keepTimelineOpen={(editEvent?.taskId ?? (showCreateEventModal ? eventTaskId : null)) === task.id}
                       />
                     ))
                   )}

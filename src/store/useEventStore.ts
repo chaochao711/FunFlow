@@ -1,4 +1,4 @@
-// src/store/useEventStore.ts — 事件/节点状态管理
+// src/store/useEventStore.ts — 事件/节点状态管理（支持自定义排序）
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -18,6 +18,8 @@ export interface TaskEvent {
   estimatedTime?: string;   // 预计完成时间（仅 completion 类型可选）
   // 编辑
   updatedAt?: string;       // 最后编辑时间
+  // 排序
+  order: number;            // 全局排序，越小越靠前
 }
 
 interface EventStore {
@@ -29,6 +31,7 @@ interface EventStore {
   toggleEventComplete: (id: string) => void;
   getEventsByTask: (taskId: string) => TaskEvent[];
   getAllEvents: () => TaskEvent[];
+  reorderEvents: (taskId: string, orderedIds: string[]) => void;
 
   // 云同步
   setEvents: (events: TaskEvent[]) => void;
@@ -40,8 +43,16 @@ export const useEventStore = create<EventStore>()(
       events: [],
 
       addEvent: (event) => {
+        // 新事件 order = 0（排最前），同 task 的事件 +1
+        const siblings = get().events.filter(e => e.taskId === event.taskId);
+        const updated = get().events.map(e =>
+          e.taskId === event.taskId ? { ...e, order: (e.order ?? 0) + 1 } : e
+        );
         useSyncStore.getState().markEventDirty(event.id);
-        set((state) => ({ events: [event, ...state.events] }));
+        // 标记所有重新编号的同 task 事件
+        const allDirty = [event.id, ...siblings.map(s => s.id)];
+        useSyncStore.getState().markEventsDirty(allDirty);
+        set({ events: [{ ...event, order: event.order ?? 0 }, ...updated] });
       },
 
       updateEvent: (id, updates) => {
@@ -79,13 +90,29 @@ export const useEventStore = create<EventStore>()(
       getEventsByTask: (taskId) => {
         const evts = get().events;
         if (!Array.isArray(evts)) return [];
-        return evts.filter((e) => e.taskId === taskId);
+        return evts
+          .filter((e) => e.taskId === taskId)
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       },
 
       getAllEvents: () => {
         return [...get().events].sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
+      },
+
+      reorderEvents: (taskId, orderedIds) => {
+        const syncStore = useSyncStore.getState();
+        set((state) => {
+          const updated = state.events.map(e => {
+            const idx = orderedIds.indexOf(e.id);
+            if (e.taskId !== taskId) return e;
+            return { ...e, order: idx >= 0 ? idx : (e.order ?? 0) };
+          });
+          return { events: updated };
+        });
+        // 标记脏
+        syncStore.markEventsDirty(orderedIds);
       },
 
       setEvents: (events) => set({ events }),

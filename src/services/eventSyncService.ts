@@ -19,6 +19,7 @@ export function dbEventToApp(item: any): TaskEvent {
     completedAt: item.completed_at ?? undefined,
     estimatedTime: item.estimated_time ?? undefined,
     updatedAt: item.updated_at ?? undefined,
+    order: item.order ?? 0,
   };
 }
 
@@ -55,6 +56,7 @@ export async function syncEventsToCloud(userId: string, events: TaskEvent[]) {
         content: event.content,
         timestamp: event.timestamp,
         created_at: event.createdAt,
+        event_order: event.order ?? 0,
         completed: event.completed ?? false,
         completed_at: event.completedAt ?? null,
         estimated_time: event.estimatedTime ?? null,

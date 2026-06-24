@@ -1,12 +1,13 @@
 // src/components/TaskCard.tsx
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Calendar, CheckCircle, Circle, PlayCircle, Archive, Trash2, Edit3, RotateCcw, CircleCheck } from 'lucide-react';
 import { Task, Tag, useTaskStore } from '../store/useTaskStore';
 import { getTagDisplay, getTagColorClass } from '../utils/tagUtils';
 import EventTimeline from './EventTimeline';
 import type { TaskEvent } from '../store/useEventStore';
+import { useEventStore } from '../store/useEventStore';
 
 interface TaskCardProps {
   task: Task;
@@ -25,6 +26,7 @@ interface TaskCardProps {
   changeIndicator?: 'modified' | 'status-changed';
   allTasks?: Task[];
   taskEvents?: TaskEvent[];
+  keepTimelineOpen?: boolean;
 }
 
 const priorityConfig = {
@@ -76,6 +78,7 @@ export default function TaskCard({
   changeIndicator,
   allTasks = [],
   taskEvents = [],
+  keepTimelineOpen = false,
 }: TaskCardProps) {
   const [isPriorityExpanded, setIsPriorityExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,6 +88,11 @@ export default function TaskCard({
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const eventHoverDelay = useTaskStore(s => s.eventHoverDelay);
+  const { reorderEvents } = useEventStore();
+
+  const handleReorder = useCallback((orderedIds: string[]) => {
+    reorderEvents(task.id, orderedIds);
+  }, [task.id, reorderEvents]);
 
   const handleMouseEnter = () => {
     if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
@@ -97,6 +105,8 @@ export default function TaskCard({
   };
 
   const handleMouseLeave = () => {
+    // 编辑事件进行中，不收起时间线
+    if (keepTimelineOpen) return;
     if (showTimerRef.current) { clearTimeout(showTimerRef.current); showTimerRef.current = null; }
     if (!hideTimerRef.current) {
       hideTimerRef.current = setTimeout(() => {
@@ -377,6 +387,7 @@ export default function TaskCard({
                 onToggleComplete={onToggleEventComplete}
                 onEditEvent={onEditEvent}
                 onDeleteEvent={onDeleteEvent}
+                onReorder={handleReorder}
               />
             )}
           </div>
