@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Calendar, CheckCircle, Circle, PlayCircle, Archive, Trash2, Edit3, RotateCcw, CircleCheck } from 'lucide-react';
 import { Task, Tag, useTaskStore } from '../store/useTaskStore';
 import { getTagDisplay, getTagColorClass } from '../utils/tagUtils';
+import { formatDateOnly } from '../utils/dateUtils';
 import EventTimeline from './EventTimeline';
 import type { TaskEvent } from '../store/useEventStore';
 import { useEventStore } from '../store/useEventStore';
@@ -363,6 +364,11 @@ export default function TaskCard({
               {isToday && !isOverdue && <span className="text-orange-600 dark:text-orange-400">(今日截止)</span>}
             </div>
           )}
+
+          {/* 创建时间（精确到日） */}
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            🕐 {formatDateOnly(task.createdAt)} 创建
+          </span>
         </div>
 
         {/* 内联事件时间线 */}

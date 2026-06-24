@@ -10,13 +10,18 @@ function localTimeStr(date: Date): string {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-/** 获取完整本地日期时间 */
+/** 获取本地时间字符串 HH:mm:ss（含秒） */
+function localTimeStrWithSeconds(date: Date): string {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+}
+
+/** 获取完整本地日期时间（含秒） */
 function localFullStr(date: Date): string {
-  return `${localDateStr(date)} ${localTimeStr(date)}`;
+  return `${localDateStr(date)} ${localTimeStrWithSeconds(date)}`;
 }
 
 /**
- * 格式化日期为相对时间显示（基于本地时间）
+ * 格式化日期为相对时间（不含秒，用于列表视图）
  * - 当天 → "14:30"
  * - 昨天 → "昨天 14:30"
  * - 7天内 → "3天前 14:30"
@@ -47,6 +52,68 @@ export function formatRelativeTime(dateStr: string): { display: string; full: st
     const d = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     return { display: `${d} ${time}`, full };
   }
+}
+
+/**
+ * 格式化日期为相对时间（含秒，用于时间线视图）
+ */
+export function formatRelativeTimeWithSeconds(dateStr: string): { display: string; full: string } {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const full = localFullStr(date);
+
+  const todayStr = localDateStr(now);
+  const targetStr = localDateStr(date);
+  const time = localTimeStrWithSeconds(date);
+
+  if (targetStr === todayStr) {
+    return { display: time, full };
+  }
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - targetDay.getTime()) / 86400000);
+
+  if (diffDays === 1) {
+    return { display: `昨天 ${time}`, full };
+  } else if (diffDays < 7) {
+    return { display: `${diffDays}天前 ${time}`, full };
+  } else {
+    const d = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    return { display: `${d} ${time}`, full };
+  }
+}
+
+/**
+ * 格式化日期仅为日（用于列表视图展示创建时间）
+ * - 明天 → "明天"
+ * - 今天 → "今天"
+ * - 昨天 → "昨天"
+ * - 7天内 → "3天前"
+ * - 更早 → "06-15" 或 "2024-06-15"
+ */
+export function formatDateOnly(dateStr: string): string {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const now = new Date();
+  const todayStr = localDateStr(now);
+  const targetStr = localDateStr(date);
+
+  if (targetStr === todayStr) return '今天';
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - targetDay.getTime()) / 86400000);
+
+  if (diffDays === 1) return '昨天';
+  if (diffDays === -1) return '明天';
+  if (diffDays > 0 && diffDays < 7) return `${diffDays}天前`;
+  if (diffDays < 0 && diffDays > -7) return `${Math.abs(diffDays)}天后`;
+
+  const sameYear = date.getFullYear() === now.getFullYear();
+  const d = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  if (sameYear) return d;
+  return `${date.getFullYear()}-${d}`;
 }
 
 /**

@@ -5,7 +5,7 @@ import { Plus, Calendar, Flag } from 'lucide-react';
 import { useTaskStore, Task } from '../store/useTaskStore';
 import { useEventStore } from '../store/useEventStore';
 import { getTagDisplay, getTagColorClass } from '../utils/tagUtils';
-import { formatRelativeTime, groupTasksByDate, getDateGroupLabel } from '../utils/dateUtils';
+import { groupTasksByDate, getDateGroupLabel } from '../utils/dateUtils';
 import CreateEventModal from './CreateEventModal';
 
 interface TimelineViewProps {
@@ -32,9 +32,10 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
     .map(t => ({ id: t.id, title: t.title }));
 
   // 按 dueDate || createdAt 分组
+  // 按创建时间分组，截止日期在卡片尾部显示
   const dateGroups = groupTasksByDate(
     tasks.filter(t => !t.deleted),
-    (t) => t.dueDate || t.createdAt
+    (t) => t.createdAt
   );
 
   return (
@@ -81,8 +82,7 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
                       .map(tagId => tags.find(t => t.id === tagId))
                       .filter(Boolean);
                     const isHovered = hoveredId === task.id;
-                    const sortDate = task.dueDate || task.createdAt;
-                    const timeInfo = formatRelativeTime(sortDate);
+                    const hasDueDate = !!task.dueDate;
 
                     return (
                       <div
@@ -115,13 +115,16 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
                             >
                               {task.title}
                             </h4>
-                            {/* 截止时间 */}
-                            <span
-                              className="text-xs text-zinc-400 cursor-help flex-shrink-0"
-                              title={timeInfo.full}
-                            >
-                              {isHovered ? timeInfo.full : timeInfo.display}
-                            </span>
+                            {/* 尾端：截止日期（如有） */}
+                            {hasDueDate && task.dueDate && (
+                              <span
+                                className="text-xs text-zinc-400 flex-shrink-0 cursor-help"
+                                title={`截止日期: ${task.dueDate}`}
+                              >
+                                <Calendar size={10} className="inline mr-0.5" />
+                                {task.dueDate}
+                              </span>
+                            )}
                           </div>
 
                           {/* 标签 + 状态 */}
