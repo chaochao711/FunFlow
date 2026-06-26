@@ -10,6 +10,7 @@ import type { TaskEvent } from '../store/useEventStore';
 import CreateTagModal from './CreateTagModal';
 import CreateEventModal from './CreateEventModal';
 import EventTimeline from './EventTimeline';
+import PersonInput from './PersonInput';
 
 interface TaskDetailDrawerProps {
   taskId: string | null;
@@ -161,23 +162,19 @@ export default function TaskDetailDrawer({ taskId, onClose, tags }: TaskDetailDr
                   {/* 发起人 / 作用对象 */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-zinc-500 dark:text-zinc-400">发起人</label>
-                      <input
-                        type="text"
-                        defaultValue={task.createdBy || ''}
-                        onChange={(e) => setField('createdBy', e.target.value || undefined)}
+                      <PersonInput
+                        value={editData.createdBy ?? task.createdBy ?? ''}
+                        onChange={(v) => setField('createdBy', v || undefined)}
                         placeholder="发起人"
-                        className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        label="👤 发起人"
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-zinc-500 dark:text-zinc-400">作用对象</label>
-                      <input
-                        type="text"
-                        defaultValue={task.assignedTo || ''}
-                        onChange={(e) => setField('assignedTo', e.target.value || undefined)}
+                      <PersonInput
+                        value={editData.assignedTo ?? task.assignedTo ?? ''}
+                        onChange={(v) => setField('assignedTo', v || undefined)}
                         placeholder="执行者"
-                        className="w-full mt-1 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        label="🎯 作用对象"
                       />
                     </div>
                   </div>

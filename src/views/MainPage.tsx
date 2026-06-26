@@ -51,17 +51,11 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
   const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'timeline'>('list');
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
   const [eventTaskId, setEventTaskId] = useState<string | null>(null);
-  const [recentChanges, setRecentChanges] = useState<Record<string, 'modified' | 'status-changed'>>({});
   const [showSettings, setShowSettings] = useState(false);
   const [editEvent, setEditEvent] = useState<TaskEvent | null>(null);
 
   const eventHoverDelay = useTaskStore(s => s.eventHoverDelay);
   const setEventHoverDelay = useTaskStore(s => s.setEventHoverDelay);
-
-  // 标记任务变更
-  const markTaskChanged = (taskId: string, type: 'modified' | 'status-changed') => {
-    setRecentChanges(prev => ({ ...prev, [taskId]: type }));
-  };
 
   const activeTasks = tasks.filter(t => !t.archived && !t.deleted);
 
@@ -570,11 +564,9 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
                             }
                           }
                           useTaskStore.getState().updateTask(task.id, { status });
-                          markTaskChanged(task.id, 'status-changed');
                         }}
                         onPriorityChange={(priority) => {
                           useTaskStore.getState().updateTask(task.id, { priority });
-                          markTaskChanged(task.id, 'modified');
                         }}
                         onArchive={() => archiveTask(task.id)}
                         onDelete={() => deleteTask(task.id)}
@@ -592,9 +584,8 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
                           // 直接打开事件编辑弹窗
                           setEditEvent(evt);
                         }}
-                        changeIndicator={recentChanges[task.id]}
                         allTasks={tasks}
-                        taskEvents={allEvents.filter(e => e.taskId === task.id)}
+                        taskEvents={allEvents.filter(e => e.taskId === task.id && !e.deleted)}
                         keepTimelineOpen={(editEvent?.taskId ?? (showCreateEventModal ? eventTaskId : null)) === task.id}
                       />
                     ))

@@ -1,8 +1,9 @@
 // src/store/useEventStore.ts — 事件/节点状态管理（支持自定义排序）
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { useSyncStore } from './useSyncStore';
+import { scopedStorage } from './persistStorage';
 
 export interface TaskEvent {
   id: string;
@@ -17,9 +18,14 @@ export interface TaskEvent {
   completedAt?: string;     // 完成时间
   estimatedTime?: string;   // 预计完成时间（仅 completion 类型可选）
   // 编辑
-  updatedAt?: string;       // 最后编辑时间
+  updatedAt: string;        // 最后编辑时间
   // 排序
   order: number;            // 全局排序，越小越靠前
+  // 软删除
+  deleted: boolean;         // 是否已删除
+  deletedAt?: string;       // 删除时间
+  // 扩展字段
+  metadata?: Record<string, any>;
 }
 
 interface EventStore {
@@ -52,35 +58,49 @@ export const useEventStore = create<EventStore>()(
         // 标记所有重新编号的同 task 事件
         const allDirty = [event.id, ...siblings.map(s => s.id)];
         useSyncStore.getState().markEventsDirty(allDirty);
-        set({ events: [{ ...event, order: event.order ?? 0 }, ...updated] });
+        const now = new Date().toISOString();
+        set({ events: [{
+          ...event,
+          order: event.order ?? 0,
+          updatedAt: now,
+          deleted: false,
+        }, ...updated] });
       },
 
       updateEvent: (id, updates) => {
         useSyncStore.getState().markEventDirty(id);
+        const now = new Date().toISOString();
         set((state) => ({
           events: state.events.map((e) =>
-            e.id === id ? { ...e, ...updates } : e
+            e.id === id ? { ...e, ...updates, updatedAt: now } : e
           ),
         }));
       },
 
       deleteEvent: (id) => {
+        // 软删除：标记 deleted=true 而非移除
         useSyncStore.getState().markEventDirty(id);
+        const now = new Date().toISOString();
         set((state) => ({
-          events: state.events.filter((e) => e.id !== id),
+          events: state.events.map((e) =>
+            e.id === id
+              ? { ...e, deleted: true, deletedAt: now, updatedAt: now }
+              : e
+          ),
         }));
       },
 
       toggleEventComplete: (id) => {
         useSyncStore.getState().markEventDirty(id);
+        const now = new Date().toISOString();
         set((state) => ({
           events: state.events.map((e) =>
             e.id === id
               ? {
                   ...e,
                   completed: !e.completed,
-                  completedAt: !e.completed ? new Date().toISOString() : undefined,
-                  updatedAt: new Date().toISOString(),
+                  completedAt: !e.completed ? now : undefined,
+                  updatedAt: now,
                 }
               : e
           ),
@@ -91,7 +111,7 @@ export const useEventStore = create<EventStore>()(
         const evts = get().events;
         if (!Array.isArray(evts)) return [];
         return evts
-          .filter((e) => e.taskId === taskId)
+          .filter((e) => e.taskId === taskId && !e.deleted)
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       },
 
@@ -119,6 +139,7 @@ export const useEventStore = create<EventStore>()(
     }),
     {
       name: 'funflow-events-storage',
+      storage: createJSONStorage(() => scopedStorage),
     }
   )
 );

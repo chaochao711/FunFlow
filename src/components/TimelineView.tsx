@@ -156,7 +156,7 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
                         {/* 事件子时间线 */}
                         {(() => {
                           const taskEvents = events
-                            .filter(e => e.taskId === task.id)
+                            .filter(e => e.taskId === task.id && !e.deleted)
                             .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
                           if (taskEvents.length === 0) return null;
                           return (

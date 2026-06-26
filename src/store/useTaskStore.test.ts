@@ -81,14 +81,16 @@ describe('useTaskStore', () => {
   });
 
   describe('permanentDeleteTask', () => {
-    it('永久删除', () => {
+    it('已弃用：转为软删除，标记 deleted=true', () => {
       useTaskStore.getState().addTask({
         id: '1', title: 'T', priority: 'low', status: 'pending',
         tags: [], createdAt: '', updatedAt: '', archived: false, deleted: false,
       });
 
       useTaskStore.getState().permanentDeleteTask('1');
-      expect(useTaskStore.getState().tasks).toHaveLength(0);
+      const task = useTaskStore.getState().tasks[0];
+      expect(task.deleted).toBe(true);
+      expect(task.deletedAt).toBeDefined();
     });
   });
 
@@ -138,8 +140,7 @@ describe('useTaskStore', () => {
   });
 
   describe('emptyTrash', () => {
-    it('清空所有已删除任务', () => {
-      // 直接用 setState 设置初始状态，绕过 persist middleware
+    it('已弃用：不执行任何操作（7天自动清理）', () => {
       useTaskStore.setState({
         tasks: [
           { id: '1', title: '正常', priority: 'low' as const, status: 'pending' as const,
@@ -151,8 +152,7 @@ describe('useTaskStore', () => {
 
       useTaskStore.getState().emptyTrash();
       const tasks = useTaskStore.getState().tasks;
-      expect(tasks).toHaveLength(1);
-      expect(tasks[0].id).toBe('1');
+      expect(tasks).toHaveLength(2); // 不变
     });
   });
 

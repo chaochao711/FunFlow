@@ -3,9 +3,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './services/supabase';
 import Auth from './components/Auth';
-import { useTaskStore } from './store/useTaskStore';
+import { useTaskStore, Person } from './store/useTaskStore';
 import { useEventStore } from './store/useEventStore';
-import { loadTasksFromCloud, loadTagsFromCloud, syncTasksToCloud, syncTagsToCloud } from './services/syncService';
+import { useSyncStore } from './store/useSyncStore';
+import { setPersistUserId } from './store/persistStorage';
+import { loadTasksFromCloud, loadTagsFromCloud, loadPeopleFromCloud, syncTasksToCloud, syncTagsToCloud, syncPeopleToCloud } from './services/syncService';
 import { loadEventsFromCloud, syncEventsToCloud } from './services/eventSyncService';
 import { recoverInvalidTags } from './utils/recoverInvalidTags';
 import { subscribeToRealtime } from './services/realtimeSync';
@@ -18,10 +20,12 @@ function App() {
   const {
     tasks,
     tags,
+    people,
     showArchived,
     showTrash,
     setTasks,
     setTags,
+    setPeople,
   } = useTaskStore();
   const { events, setEvents } = useEventStore();
 
@@ -41,6 +45,22 @@ function App() {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+
+      if (_event === 'SIGNED_OUT') {
+        // 用户登出：先切 persist scope 到 unscoped，再清内存
+        // ⚠️ 顺序必须如此：先切 scope，清内存的 setXxx([]) 就不会
+        //    覆盖当前用户的 scoped persist 数据
+        setPersistUserId(null);
+        useTaskStore.getState().setTasks([]);
+        useTaskStore.getState().setTags([]);
+        useTaskStore.getState().setPeople([]);
+        useEventStore.getState().setEvents([]);
+        useSyncStore.getState().clearDirtyTasks();
+        useSyncStore.getState().clearDirtyTags();
+        useSyncStore.getState().clearDirtyPeople();
+        useSyncStore.getState().clearDirtyEvents();
+      }
+
       if (session) {
         loadUserData(session.user.id);
       }
@@ -49,39 +69,108 @@ function App() {
     return () => listener?.subscription.unsubscribe();
   }, []);
 
+  /** 从当前用户的 scoped persist key 中加载本地数据到内存 */
+  const rehydrateFromScopedKey = (userId: string) => {
+    // ── 任务 / 标签 / 联系人 ──
+    const taskRaw = localStorage.getItem(`funflow-storage-${userId}`);
+    if (taskRaw) {
+      try {
+        const parsed = JSON.parse(taskRaw);
+        if (parsed?.state) {
+          useTaskStore.getState().setTasks(parsed.state.tasks || []);
+          useTaskStore.getState().setTags(parsed.state.tags || []);
+          useTaskStore.getState().setPeople(parsed.state.people || []);
+        } else {
+          useTaskStore.getState().setTasks([]);
+          useTaskStore.getState().setTags([]);
+          useTaskStore.getState().setPeople([]);
+        }
+      } catch {
+        useTaskStore.getState().setTasks([]);
+        useTaskStore.getState().setTags([]);
+        useTaskStore.getState().setPeople([]);
+      }
+    } else {
+      useTaskStore.getState().setTasks([]);
+      useTaskStore.getState().setTags([]);
+      useTaskStore.getState().setPeople([]);
+    }
+
+    // ── 事件 ──
+    const eventRaw = localStorage.getItem(`funflow-events-storage-${userId}`);
+    if (eventRaw) {
+      try {
+        const parsed = JSON.parse(eventRaw);
+        useEventStore.getState().setEvents(parsed?.state?.events || []);
+      } catch {
+        useEventStore.getState().setEvents([]);
+      }
+    } else {
+      useEventStore.getState().setEvents([]);
+    }
+  };
+
   const loadUserData = async (userId: string) => {
     if (!userId) return;
+
+    // 切到当前用户的 persist scope，从 scoped key 重新加载本地数据
+    setPersistUserId(userId);
+    rehydrateFromScopedKey(userId);
+
     try {
-      const [cloudTasks, cloudTags] = await Promise.all([
+      const [cloudTasks, cloudTags, cloudPeople] = await Promise.all([
         loadTasksFromCloud(userId),
         loadTagsFromCloud(userId),
+        loadPeopleFromCloud(userId).catch(() => [] as Person[]),
       ]);
 
-      // 合并：云端数据为主，但保留本地有而云端没有的任务（离线创建等）
+      // 合并：以 updatedAt 为仲裁依据，保留 updatedAt 更新的版本
       const localTasks = useTaskStore.getState().tasks;
       const mergedMap = new Map(localTasks.map(t => [t.id, t]));
       for (const ct of cloudTasks || []) {
-        mergedMap.set(ct.id, ct); // 云端版本优先（覆盖同 ID 的旧本地数据）
+        const local = mergedMap.get(ct.id);
+        if (!local || ct.updatedAt >= local.updatedAt) {
+          mergedMap.set(ct.id, ct); // 云端更新或本地不存在 → 用云端
+        }
+        // else: 本地更新 → 保留本地（不执行 set，因为本地已在 map 中）
       }
       const mergedTasks = Array.from(mergedMap.values());
       const finalTags = recoverInvalidTags(mergedTasks, cloudTags);
       setTasks(mergedTasks);
       setTags(finalTags);
 
+      // People 合并：同 updatedAt 仲裁
+      const localPeople = useTaskStore.getState().people;
+      const peopleMap = new Map(localPeople.map(p => [p.id, p]));
+      for (const cp of cloudPeople || []) {
+        const local = peopleMap.get(cp.id);
+        if (!local || cp.updatedAt >= local.updatedAt) {
+          peopleMap.set(cp.id, cp);
+        }
+      }
+      setPeople(Array.from(peopleMap.values()));
+
+      // 全量迁移：扫描所有任务，确保人员树中包含所有 createdBy/assignedTo
+      useTaskStore.getState().syncPeopleFromTasks();
+
       // 页面加载时清理云端已过期回收站任务（7 天）
       purgeExpiredTrash(userId);
 
-      // 事件加载：与本地合并，保留本地有而云端没有的事件
+      // 事件加载：与本地合并，以 updatedAt 为仲裁依据
       loadEventsFromCloud(userId)
         .then(data => {
-          if (data && data.length > 0) {
-            const localEvents = useEventStore.getState().events;
-            const mergedMap = new Map(localEvents.map(e => [e.id, e]));
-            for (const ce of data) {
-              mergedMap.set(ce.id, ce);
+          const localEvents = useEventStore.getState().events;
+          const mergedMap = new Map(localEvents.map(e => [e.id, e]));
+          for (const ce of data || []) {
+            const local = mergedMap.get(ce.id);
+            const incomingTime = ce.updatedAt || ce.createdAt;
+            const localTime = local && (local.updatedAt || local.createdAt);
+            if (!local || !localTime || incomingTime >= localTime) {
+              mergedMap.set(ce.id, ce); // 云端更新或本地不存在 → 用云端
             }
-            setEvents(Array.from(mergedMap.values()));
+            // else: 本地更新 → 保留本地
           }
+          setEvents(Array.from(mergedMap.values()));
         })
         .catch(err => console.warn('事件加载失败，使用本地数据'));
     } catch (error) {
@@ -97,6 +186,7 @@ function App() {
         await Promise.all([
           syncTasksToCloud(session.user.id, tasks),
           syncTagsToCloud(session.user.id, tags),
+          syncPeopleToCloud(session.user.id, people),
           syncEventsToCloud(session.user.id, events),
         ]);
       } catch (err) {
@@ -104,7 +194,7 @@ function App() {
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [tasks, tags, events, session]);
+  }, [tasks, tags, people, events, session]);
 
   // ========== Realtime 多标签页/多设备实时同步 ==========
   useEffect(() => {

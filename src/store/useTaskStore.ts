@@ -1,8 +1,10 @@
 // src/store/useTaskStore.ts
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { useSyncStore } from './useSyncStore';
+import { useEventStore } from './useEventStore';
+import { scopedStorage } from './persistStorage';
 
 export interface Task {
   id: string;
@@ -34,6 +36,19 @@ export interface Tag {
   order: number;
 }
 
+export interface Person {
+  id: string;
+  name: string;
+  nickname?: string;
+  email?: string;
+  parentId: string | null;
+  level: number;
+  order: number;
+  autoCreated: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ArchiveSettings {
   autoArchiveDays: number;
   enabled: boolean;
@@ -42,6 +57,7 @@ export interface ArchiveSettings {
 interface TaskStore {
   tasks: Task[];
   tags: Tag[];
+  people: Person[];
   sidebarOpen: boolean;
   selectedTaskId: string | null;
   showArchived: boolean;
@@ -66,7 +82,15 @@ interface TaskStore {
   updateTag: (id: string, updates: Partial<Tag>) => void;
   deleteTag: (id: string) => void;
   moveTag: (dragId: string, targetId: string, position: 'before' | 'after' | 'inside') => void;
-  
+
+  // Person Actions
+  addPerson: (person: Person) => void;
+  updatePerson: (id: string, updates: Partial<Person>) => void;
+  deletePerson: (id: string) => void;
+  movePerson: (dragId: string, targetId: string, position: 'before' | 'after' | 'inside') => void;
+  ensurePersonExists: (name: string, nickname?: string) => string;  // 自动同步：返回 person.id
+  syncPeopleFromTasks: () => void;  // 全量迁移：扫描所有任务，补录人员到树中
+
   // UI Actions
   toggleSidebar: () => void;
   setSelectedTask: (id: string | null) => void;
@@ -78,6 +102,7 @@ interface TaskStore {
   // 云同步
   setTasks: (tasks: Task[]) => void;
   setTags: (tags: Tag[]) => void;
+  setPeople: (people: Person[]) => void;
   mergeTrashTasks: (cloudTrash: Task[]) => void;
 }
 
@@ -95,6 +120,7 @@ export const useTaskStore = create<TaskStore>()(
     (set, get) => ({
       tasks: [],
       tags:  [],
+      people: [],
       sidebarOpen: true,
       selectedTaskId: null,
       showArchived: false,
@@ -109,6 +135,9 @@ export const useTaskStore = create<TaskStore>()(
 
       addTask: (task) => {
         useSyncStore.getState().markTaskDirty(task.id);
+        // 自动同步：新任务的 createdBy/assignedTo 确保 Person 树中存在
+        if (task.createdBy) get().ensurePersonExists(task.createdBy);
+        if (task.assignedTo) get().ensurePersonExists(task.assignedTo);
         return set((state) => ({
           tasks: [{ ...task, archived: false, deleted: false }, ...state.tasks]
         }));
@@ -116,6 +145,13 @@ export const useTaskStore = create<TaskStore>()(
 
       updateTask: (id, updates) => {
         useSyncStore.getState().markTaskDirty(id);
+        // 自动同步：createdBy/assignedTo 变更时确保 Person 树中存在
+        if (updates.createdBy) {
+          get().ensurePersonExists(updates.createdBy);
+        }
+        if (updates.assignedTo) {
+          get().ensurePersonExists(updates.assignedTo);
+        }
         return set((state) => {
           const task = state.tasks.find(t => t.id === id);
           const newUpdates = { ...updates };
@@ -136,26 +172,56 @@ export const useTaskStore = create<TaskStore>()(
 
       deleteTask: (id) => {
         useSyncStore.getState().markTaskDirty(id);
+
+        // 级联：该任务的所有事件软删除
+        const now = new Date().toISOString();
+        const { events, setEvents } = useEventStore.getState();
+        const taskEvents = events.filter(e => e.taskId === id && !e.deleted);
+        if (taskEvents.length > 0) {
+          const eventIds = taskEvents.map(e => e.id);
+          useSyncStore.getState().markEventsDirty(eventIds);
+          const eventMap = new Map(events.map(e => [e.id, e]));
+          for (const eId of eventIds) {
+            eventMap.set(eId, { ...eventMap.get(eId)!, deleted: true, deletedAt: now, updatedAt: now });
+          }
+          setEvents(Array.from(eventMap.values()));
+        }
+
         return set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
-              ? { ...task, deleted: true, deletedAt: new Date().toISOString() }
+              ? { ...task, deleted: true, deletedAt: now }
               : task
           ),
         }));
       },
 
-      permanentDeleteTask: (id) =>
-        set((state) => ({
-          tasks: state.tasks.filter((task) => task.id !== id),
-        })),
+      permanentDeleteTask: (id) => {
+        console.warn('⚠️ permanentDeleteTask 已弃用，使用 deleteTask（软删除，7天自动清理）');
+        return get().deleteTask(id);
+      },
 
       restoreTask: (id) => {
         useSyncStore.getState().markTaskDirty(id);
+
+        // 级联：该任务的所有事件恢复
+        const now = new Date().toISOString();
+        const { events, setEvents } = useEventStore.getState();
+        const taskEvents = events.filter(e => e.taskId === id && e.deleted);
+        if (taskEvents.length > 0) {
+          const eventIds = taskEvents.map(e => e.id);
+          useSyncStore.getState().markEventsDirty(eventIds);
+          const eventMap = new Map(events.map(e => [e.id, e]));
+          for (const eId of eventIds) {
+            eventMap.set(eId, { ...eventMap.get(eId)!, deleted: false, deletedAt: undefined, updatedAt: now });
+          }
+          setEvents(Array.from(eventMap.values()));
+        }
+
         return set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
-              ? { ...task, deleted: false,  archived: true,deletedAt: undefined }
+              ? { ...task, deleted: false, archived: true, deletedAt: undefined }
               : task
           ),
         }));
@@ -209,11 +275,10 @@ export const useTaskStore = create<TaskStore>()(
         set({ tasks: updatedTasks });
       },
 
-      // 清空回收站（仅本地移除，云端保留 7 天）
-      emptyTrash: () =>
-        set((state) => ({
-          tasks: state.tasks.filter((task) => !task.deleted),
-        })),
+      // 清空回收站（已弃用：软删除体系下 7 天自动清理，无需手动清空）
+      emptyTrash: () => {
+        console.warn('⚠️ emptyTrash 已弃用：回收站 7 天自动清理，无需手动清空');
+      },
 
       // ========== Tag Actions ==========
 
@@ -244,6 +309,21 @@ export const useTaskStore = create<TaskStore>()(
 
       restoreToArchive: (id) => {
         useSyncStore.getState().markTaskDirty(id);
+
+        // 级联：该任务的所有事件恢复
+        const now = new Date().toISOString();
+        const { events, setEvents } = useEventStore.getState();
+        const taskEvents = events.filter(e => e.taskId === id && e.deleted);
+        if (taskEvents.length > 0) {
+          const eventIds = taskEvents.map(e => e.id);
+          useSyncStore.getState().markEventsDirty(eventIds);
+          const eventMap = new Map(events.map(e => [e.id, e]));
+          for (const eId of eventIds) {
+            eventMap.set(eId, { ...eventMap.get(eId)!, deleted: false, deletedAt: undefined, updatedAt: now });
+          }
+          setEvents(Array.from(eventMap.values()));
+        }
+
         return set((state) => ({
           tasks: state.tasks.map((task) =>
             task.id === id
@@ -311,6 +391,121 @@ export const useTaskStore = create<TaskStore>()(
           return { tags: newTags };
         }),
       
+      // ========== Person Actions ==========
+
+      addPerson: (person) => {
+        useSyncStore.getState().markPersonDirty(person.id);
+        return set((state) => ({ people: [...state.people, person] }));
+      },
+
+      updatePerson: (id, updates) => {
+        useSyncStore.getState().markPersonDirty(id);
+        return set((state) => ({
+          people: state.people.map((p) =>
+            p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
+          ),
+        }));
+      },
+
+      deletePerson: (id) => {
+        useSyncStore.getState().markPersonDirty(id);
+        return set((state) => ({
+          people: state.people.filter((p) => p.id !== id),
+          // 不同步清理任务中的 createdBy/assignedTo 文本引用
+        }));
+      },
+
+      movePerson: (dragId, targetId, position) =>
+        set((state) => {
+          const dragIndex = state.people.findIndex(p => p.id === dragId);
+          const targetIndex = state.people.findIndex(p => p.id === targetId);
+          if (dragIndex === -1 || targetIndex === -1) return state;
+
+          const dragPerson = { ...state.people[dragIndex] };
+          const targetPerson = state.people[targetIndex];
+          let newPeople = [...state.people];
+
+          newPeople.splice(dragIndex, 1);
+          let newTargetIndex = newPeople.findIndex(p => p.id === targetId);
+
+          if (position === 'inside') {
+            dragPerson.parentId = targetPerson.id;
+            dragPerson.level = targetPerson.level + 1;
+            const childrenCount = newPeople.filter(p => p.parentId === targetPerson.id).length;
+            dragPerson.order = childrenCount;
+            newPeople.splice(newTargetIndex + 1 + childrenCount, 0, dragPerson);
+          } else {
+            dragPerson.parentId = targetPerson.parentId;
+            dragPerson.level = targetPerson.level;
+            const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
+            newPeople.splice(insertIndex, 0, dragPerson);
+          }
+
+          const regroup = (parentId: string | null) => {
+            const siblings = newPeople.filter(p => p.parentId === parentId);
+            siblings.forEach((p, idx) => { p.order = idx; });
+          };
+
+          const toMark: string[] = [dragId, targetId];
+          regroup(dragPerson.parentId);
+          const dragParent = dragPerson.parentId;
+          newPeople.filter(p => p.parentId === dragParent).forEach(p => { if (!toMark.includes(p.id)) toMark.push(p.id); });
+          if (position === 'inside') {
+            regroup(targetPerson.id);
+            newPeople.filter(p => p.parentId === targetPerson.id).forEach(p => { if (!toMark.includes(p.id)) toMark.push(p.id); });
+          }
+
+          setTimeout(() => useSyncStore.getState().markPeopleDirty(toMark), 0);
+          return { people: newPeople };
+        }),
+
+      // 自动同步：任务中写入 createdBy/assignedTo 时，确保 Person 树中存在
+      ensurePersonExists: (name, nickname) => {
+        const state = get();
+        const finalName = name || nickname || '';
+        const finalNick = nickname || undefined;
+        // 检索是否已存在（本名精确匹配，或花名匹配）
+        const existing = state.people.find(
+          p => p.name === finalName || (finalNick && p.nickname === finalNick)
+        );
+        if (existing) {
+          if (!existing.autoCreated) return existing.id;
+          state.updatePerson(existing.id, { name: finalName, nickname: finalNick, updatedAt: new Date().toISOString() });
+          return existing.id;
+        }
+
+        // 不存在则自动创建，直接放在顶层（不创建"自动同步"根节点）
+        const newPerson: Person = {
+          id: crypto.randomUUID(),
+          name: finalName,
+          nickname: finalNick,
+          parentId: null,
+          level: 0,
+          order: state.people.filter(p => p.parentId === null).length,
+          autoCreated: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        state.addPerson(newPerson);
+        return newPerson.id;
+      },
+
+      // 全量迁移：扫描所有任务，补录人员到树中
+      syncPeopleFromTasks: () => {
+        const state = get();
+        const seen = new Set(state.people.map(p => p.name));
+        state.tasks.forEach(task => {
+          if (task.createdBy && !seen.has(task.createdBy)) {
+            seen.add(task.createdBy);
+            state.ensurePersonExists(task.createdBy);
+          }
+          if (task.assignedTo && !seen.has(task.assignedTo)) {
+            seen.add(task.assignedTo);
+            state.ensurePersonExists(task.assignedTo);
+          }
+        });
+      },
+
       // ========== UI Actions ==========
       
       toggleSidebar: () =>
@@ -336,13 +531,17 @@ export const useTaskStore = create<TaskStore>()(
       
       setTasks: (tasks) => set({ tasks }),
       setTags: (tags) => set({ tags }),
+      setPeople: (people) => set({ people }),
 
-      // 合并云端回收站任务到本地（云端版本优先）
+      // 合并云端回收站任务到本地（以 updatedAt 为仲裁依据）
       mergeTrashTasks: (cloudTrash) =>
         set((state) => {
           const merged = new Map(state.tasks.map(t => [t.id, t]));
           for (const ct of cloudTrash) {
-            merged.set(ct.id, ct); // 云端版本优先
+            const local = merged.get(ct.id);
+            if (!local || ct.updatedAt >= local.updatedAt) {
+              merged.set(ct.id, ct);
+            }
           }
           const tasks = Array.from(merged.values());
           return { tasks };
@@ -350,6 +549,7 @@ export const useTaskStore = create<TaskStore>()(
     }),
     {
       name: 'funflow-storage',
+      storage: createJSONStorage(() => scopedStorage),
     }
   )
 );

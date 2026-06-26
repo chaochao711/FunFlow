@@ -1,6 +1,6 @@
-// src/components/Sidebar.tsx
+// src/components/Sidebar.tsx — 侧边栏（标签树 + 人员树）
 
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,12 +12,15 @@ import {
   FolderPlus,
   FilePlus,
   Edit2,
-  AlertTriangle
+  AlertTriangle,
+  Tags,
+  Users,
 } from 'lucide-react';
-import { useTaskStore, Tag } from '../store/useTaskStore';
+import { useTaskStore, Tag, Person } from '../store/useTaskStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { COLOR_OPTIONS } from '../constants/options';
 import CreateTagModal from './CreateTagModal';
+import CreatePersonModal from './CreatePersonModal';
 
 interface SidebarProps {
   selectedTags: string[];
@@ -30,20 +33,37 @@ interface TagWithChildren extends Tag {
   isExpanded?: boolean;
 }
 
+interface PersonWithChildren extends Person {
+  children: PersonWithChildren[];
+  isExpanded?: boolean;
+}
+
 export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: SidebarProps) {
-  const { tasks, tags, sidebarOpen, toggleSidebar, addTag, updateTag, deleteTag, moveTag } = useTaskStore();
+  const { tasks, tags, people, sidebarOpen, toggleSidebar, addTag, updateTag, deleteTag, moveTag,
+    addPerson, updatePerson, deletePerson, movePerson } = useTaskStore();
+
+  const [activeTab, setActiveTab] = useState<'tags' | 'people'>('tags');
+
+  // ===== 标签状态 =====
   const [expandedTags, setExpandedTags] = useState<Set<string>>(new Set());
   const [showAddTag, setShowAddTag] = useState(false);
   const [showEditTag, setShowEditTag] = useState<{ id: string; name: string; type: 'emoji' | 'color'; emoji?: string; color?: string } | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ id: string; name: string; taskCount: number; subTagCount: number } | null>(null);
+  const [showDeleteTagConfirm, setShowDeleteTagConfirm] = useState<{ id: string; name: string; taskCount: number; subTagCount: number } | null>(null);
   const [newTagParentId, setNewTagParentId] = useState<string | null>(null);
   const [dragOverTagId, setDragOverTagId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
+  const [tagDropPosition, setTagDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
 
-  console.log('Sidebar tags:', tags);
-  console.log('Sidebar tags length:', tags?.length);
+  // ===== 人员状态 =====
+  const [expandedPeople, setExpandedPeople] = useState<Set<string>>(new Set());
+  const [showAddPerson, setShowAddPerson] = useState(false);
+  const [showEditPerson, setShowEditPerson] = useState<Person | null>(null);
+  const [showDeletePersonConfirm, setShowDeletePersonConfirm] = useState<{ id: string; name: string } | null>(null);
+  const [newPersonParentId, setNewPersonParentId] = useState<string | null>(null);
+  const [dragOverPersonId, setDragOverPersonId] = useState<string | null>(null);
+  const [personDropPosition, setPersonDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
 
-  // 构建标签树
+  // ========== 标签树 ==========
+
   const buildTagTree = (parentId: string | null = null): TagWithChildren[] => {
     return tags
       .filter(tag => tag.parentId === parentId)
@@ -57,229 +77,123 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
 
   const tagTree = buildTagTree();
 
-  const toggleExpand = (tagId: string) => {
+  const toggleExpandTag = (tagId: string) => {
     const newExpanded = new Set(expandedTags);
-    if (newExpanded.has(tagId)) {
-      newExpanded.delete(tagId);
-    } else {
-      newExpanded.add(tagId);
-    }
+    newExpanded.has(tagId) ? newExpanded.delete(tagId) : newExpanded.add(tagId);
     setExpandedTags(newExpanded);
   };
 
-  // 获取标签关联的任务数量
-  const getTagTaskCount = (tagId: string): number => {
-    return tasks.filter(task => task.tags?.includes(tagId)).length;
-  };
+  const getTagTaskCount = (tagId: string) => tasks.filter(task => task.tags?.includes(tagId)).length;
+  const getSubTagCount = (tagId: string) => tags.filter(t => t.parentId === tagId).length;
+  const getPersonTaskCount = (person: Person) => tasks.filter(task =>
+    task.createdBy === person.name || task.createdBy === person.nickname ||
+    task.assignedTo === person.name || task.assignedTo === person.nickname
+  ).length;
 
-  // 获取标签的子标签数量
-  const getSubTagCount = (tagId: string): number => {
-    return tags.filter(t => t.parentId === tagId).length;
-  };
-
-  // 删除标签（包含确认对话框）
-  const handleDeleteTag = (tagId: string, tagName: string) => {
-    const taskCount = getTagTaskCount(tagId);
-    const subTagCount = getSubTagCount(tagId);
-    setShowDeleteConfirm({ id: tagId, name: tagName, taskCount, subTagCount });
-  };
-
-  const confirmDelete = () => {
-    if (showDeleteConfirm) {
-      deleteTag(showDeleteConfirm.id);
-      setShowDeleteConfirm(null);
-    }
-  };
-
-  // 重命名标签
   const handleEditTag = (tag: Tag) => {
-    setShowEditTag({
-      id: tag.id,
-      name: tag.name,
-      type: tag.colorType,
-      emoji: tag.emoji,
-      color: tag.color,
-    });
+    setShowEditTag({ id: tag.id, name: tag.name, type: tag.colorType, emoji: tag.emoji, color: tag.color });
   };
 
-  const handleAddSibling = (tagId: string) => {
+  const handleDeleteTagClick = (tagId: string, tagName: string) => {
+    setShowDeleteTagConfirm({ id: tagId, name: tagName, taskCount: getTagTaskCount(tagId), subTagCount: getSubTagCount(tagId) });
+  };
+
+  const handleAddSiblingTag = (tagId: string) => {
     const tag = tags.find(t => t.id === tagId);
-    if (tag) {
-      setNewTagParentId(tag.parentId);
-      setShowAddTag(true);
-    }
+    if (tag) { setNewTagParentId(tag.parentId); setShowAddTag(true); }
   };
 
-  const handleAddChild = (tagId: string) => {
+  const handleAddChildTag = (tagId: string) => {
     setNewTagParentId(tagId);
     setShowAddTag(true);
-    const newExpanded = new Set(expandedTags);
-    newExpanded.add(tagId);
-    setExpandedTags(newExpanded);
+    setExpandedTags(prev => { const n = new Set(prev); n.add(tagId); return n; });
   };
 
-  // ========== 拖拽排序函数（已修复拖到自己消失的问题） ==========
-  const handleDragStart = (e: React.DragEvent, tagId: string) => {
-    e.dataTransfer.setData('text/plain', tagId);
+  // ========== 人员树 ==========
+
+  const buildPersonTree = (parentId: string | null = null): PersonWithChildren[] => {
+    return people
+      .filter(p => p.parentId === parentId)
+      .sort((a, b) => a.order - b.order)
+      .map(p => ({
+        ...p,
+        children: buildPersonTree(p.id),
+        isExpanded: expandedPeople.has(p.id)
+      }));
+  };
+
+  const personTree = buildPersonTree();
+
+  const toggleExpandPerson = (personId: string) => {
+    const newExpanded = new Set(expandedPeople);
+    newExpanded.has(personId) ? newExpanded.delete(personId) : newExpanded.add(personId);
+    setExpandedPeople(newExpanded);
+  };
+
+  const handleEditPerson = (person: Person) => {
+    setShowEditPerson(person);
+  };
+
+  const handleDeletePersonClick = (personId: string, name: string) => {
+    setShowDeletePersonConfirm({ id: personId, name });
+  };
+
+  const handleAddSiblingPerson = (personId: string) => {
+    const p = people.find(p => p.id === personId);
+    if (p) { setNewPersonParentId(p.parentId); setShowAddPerson(true); }
+  };
+
+  const handleAddChildPerson = (personId: string) => {
+    setNewPersonParentId(personId);
+    setShowAddPerson(true);
+    setExpandedPeople(prev => { const n = new Set(prev); n.add(personId); return n; });
+  };
+
+  // ========== 通用拖拽处理 ==========
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    e.dataTransfer.setData('text/plain', id);
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOver = (e: React.DragEvent, tagId: string) => {
+  const handleDragOver = (
+    e: React.DragEvent,
+    id: string,
+    setDragOverId: (id: string | null) => void,
+    setDropPos: (pos: 'before' | 'after' | 'inside' | null) => void,
+  ) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    
     const dragId = e.dataTransfer.getData('text/plain');
-    // 阻止拖拽到自己
-    if (dragId === tagId) return;
-    
+    if (dragId === id) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const mouseY = e.clientY;
-    const relativeY = mouseY - rect.top;
+    const relativeY = e.clientY - rect.top;
     const height = rect.height;
-    
-    if (relativeY < height * 0.25) {
-      setDropPosition('before');
-      setDragOverTagId(tagId);
-    } else if (relativeY > height * 0.75) {
-      setDropPosition('after');
-      setDragOverTagId(tagId);
-    } else {
-      setDropPosition('inside');
-      setDragOverTagId(tagId);
-    }
+    if (relativeY < height * 0.25) { setDropPos('before'); setDragOverId(id); }
+    else if (relativeY > height * 0.75) { setDropPos('after'); setDragOverId(id); }
+    else { setDropPos('inside'); setDragOverId(id); }
   };
 
-  const handleDragLeave = () => {
-    setDragOverTagId(null);
-    setDropPosition(null);
-  };
+  const handleDrop =
+    (moveFn: (dragId: string, targetId: string, pos: 'before' | 'after' | 'inside') => void) =>
+    (e: React.DragEvent, targetId: string, dragOverId: string | null, dropPosition: 'before' | 'after' | 'inside' | null,
+     setDragOverId: (id: string | null) => void, setDropPos: (pos: null) => void) => {
+      e.preventDefault();
+      const dragId = e.dataTransfer.getData('text/plain');
+      if (dragId === targetId || !dropPosition) { setDragOverId(null); setDropPos(null); return; }
+      moveFn(dragId, targetId, dropPosition);
+      setDragOverId(null); setDropPos(null);
+    };
 
-  const handleDrop = (e: React.DragEvent, targetId: string) => {
-    e.preventDefault();
-    const dragId = e.dataTransfer.getData('text/plain');
-    // 阻止拖拽到自己
-    if (dragId === targetId) {
-      setDragOverTagId(null);
-      setDropPosition(null);
-      return;
-    }
-    if (dragId && dropPosition) {
-      moveTag(dragId, targetId, dropPosition);
-    }
-    setDragOverTagId(null);
-    setDropPosition(null);
-  };
-
-  const getDropIndicatorClass = (tagId: string, position: 'before' | 'after' | 'inside') => {
-    if (dragOverTagId !== tagId || dropPosition !== position) return '';
+  const getDropIndicatorClass = (id: string, position: 'before' | 'after' | 'inside', dragOverId: string | null, dropPosition: 'before' | 'after' | 'inside' | null) => {
+    if (dragOverId !== id || dropPosition !== position) return '';
     if (position === 'before') return 'border-t-2 border-violet-500';
     if (position === 'after') return 'border-b-2 border-violet-500';
     return 'bg-violet-100/50 dark:bg-violet-900/30 ring-2 ring-violet-500';
   };
 
-  const renderTagItem = (tag: TagWithChildren, level: number = 0) => {
-    const isSelected = selectedTags.includes(tag.id);
-    const hasChildren = tag.children.length > 0;
-    const isExpanded = tag.isExpanded;
-    const taskCount = getTagTaskCount(tag.id);
-    
-    return (
-      <div key={tag.id}>
-        <div
-          draggable
-          onDragStart={(e) => handleDragStart(e, tag.id)}
-          onDragOver={(e) => handleDragOver(e, tag.id)}
-          onDragLeave={handleDragLeave}
-          onDrop={(e) => handleDrop(e, tag.id)}
-          className={`group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-move transition-all ${
-            getDropIndicatorClass(tag.id, 'before')
-          } ${getDropIndicatorClass(tag.id, 'after')} ${getDropIndicatorClass(tag.id, 'inside')} ${
-            isSelected
-              ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'
-              : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-          }`}
-          style={{ marginLeft: level * 16 }}
-        >
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
-              <GripVertical size={12} className="text-zinc-400" />
-            </div>
-            
-            {hasChildren && (
-              <button
-                onClick={() => toggleExpand(tag.id)}
-                className="flex-shrink-0 p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
-              >
-                {isExpanded ? <ChevronDown size={12} /> : <ChevronRightIcon size={12} />}
-              </button>
-            )}
-            {!hasChildren && <div className="w-4" />}
-            
-            <button
-              onClick={() => onTagToggle(tag.id)}
-              className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
-            >
-              {tag.colorType === 'emoji' ? (
-                <span className="text-base">{tag.emoji}</span>
-              ) : (
-                <div className={`w-2.5 h-2.5 rounded-full ${COLOR_OPTIONS.find(c => c.name === tag.color)?.class}`} />
-              )}
-              <span className="text-sm truncate">{tag.name}</span>
-              {taskCount > 0 && (
-                <span className="text-xs text-zinc-400 ml-1">({taskCount})</span>
-              )}
-            </button>
-          </div>
-          
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={() => handleEditTag(tag)}
-              className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
-              title="重命名"
-            >
-              <Edit2 size={12} />
-            </button>
-            <button
-              onClick={() => handleAddSibling(tag.id)}
-              className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
-              title="添加同级标签"
-            >
-              <FilePlus size={12} />
-            </button>
-            <button
-              onClick={() => handleAddChild(tag.id)}
-              className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
-              title="添加子标签"
-            >
-              <FolderPlus size={12} />
-            </button>
-            <button
-              onClick={() => handleDeleteTag(tag.id, tag.name)}
-              className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-colors"
-              title="删除标签"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        </div>
-        
-        <AnimatePresence>
-          {isExpanded && hasChildren && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
-              {tag.children.map(child => renderTagItem(child, level + 1))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    );
-  };
+  // ========== 渲染 ==========
 
-  // ========== 桌面端侧边栏 ==========
   if (!sidebarOpen) {
     return (
       <div className="fixed left-0 top-14 bottom-0 w-16 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-r border-zinc-200 dark:border-zinc-800 z-20">
@@ -291,8 +205,10 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
   }
 
   return (
+    <Fragment>
     <div className="fixed left-0 top-14 bottom-0 w-72 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-r border-zinc-200 dark:border-zinc-800 z-20 overflow-y-auto">
-      <div className="sticky top-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 p-4 flex items-center justify-between">
+      {/* 顶部 Logo */}
+      <div className="sticky top-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 p-4 flex items-center justify-between z-10">
         <div className="flex items-center gap-2">
           <span className="text-2xl">🐟</span>
           <span className="font-bold text-lg text-zinc-900 dark:text-white">FunFlow</span>
@@ -302,127 +218,322 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
         </button>
       </div>
 
+      {/* Tab 切换 */}
+      <div className="flex border-b border-zinc-200 dark:border-zinc-800">
+        <button
+          onClick={() => setActiveTab('tags')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === 'tags'
+              ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-500'
+              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+          }`}
+        >
+          <Tags size={14} /> 标签
+        </button>
+        <button
+          onClick={() => setActiveTab('people')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === 'people'
+              ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-500'
+              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+          }`}
+        >
+          <Users size={14} /> 人员
+        </button>
+      </div>
+
       <div className="p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">标签筛选</h3>
-          <div className="flex gap-1">
-            {selectedTags.length > 0 && (
-              <button
-                onClick={onClearTags}
-                className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 px-2 py-1 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20"
-              >
-                清除
-              </button>
+        {/* ===== 标签面板 ===== */}
+        {activeTab === 'tags' && (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">标签筛选</h3>
+              <div className="flex gap-1">
+                {selectedTags.length > 0 && (
+                  <button onClick={onClearTags} className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 px-2 py-1 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20">
+                    清除
+                  </button>
+                )}
+                <button
+                  onClick={() => { setNewTagParentId(null); setShowAddTag(true); }}
+                  className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                  title="新建顶级标签"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-0.5">
+              {tagTree.map(tag => renderTagItem(tag, 0))}
+            </div>
+
+            {tags.length === 0 && (
+              <p className="text-sm text-zinc-400 text-center py-8">暂无标签，点击 + 创建</p>
             )}
-            <button
-              onClick={() => {
-                setNewTagParentId(null);
-                setShowAddTag(true);
-              }}
-              className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
-              title="新建顶级标签"
-            >
-              <Plus size={14} />
-            </button>
-          </div>
-        </div>
+          </>
+        )}
 
-        <div className="space-y-0.5">
-          {tagTree.map(tag => renderTagItem(tag, 0))}
-        </div>
+        {/* ===== 人员面板 ===== */}
+        {activeTab === 'people' && (
+          <>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">人员管理</h3>
+              <button
+                onClick={() => { setNewPersonParentId(null); setShowAddPerson(true); }}
+                className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                title="新建人员"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
 
-        {tags.length === 0 && (
-          <p className="text-sm text-zinc-400 text-center py-8">暂无标签，点击 + 创建</p>
+            <div className="space-y-0.5">
+              {personTree.map(person => renderPersonItem(person, 0))}
+            </div>
+
+            {people.length === 0 && (
+              <p className="text-sm text-zinc-400 text-center py-8">暂无人员，点击 + 创建</p>
+            )}
+          </>
         )}
       </div>
 
-      {/* 新建标签弹窗 */}
-      <CreateTagModal
-        isOpen={showAddTag}
-        onClose={() => setShowAddTag(false)}
-        onCreate={(tag) => {
-          addTag(tag);
-          if (newTagParentId) {
-            const newExpanded = new Set(expandedTags);
-            newExpanded.add(newTagParentId);
-            setExpandedTags(newExpanded);
-          }
-          setNewTagParentId(null);
-        }}
-        parentTags={tags}
-        initialParentId={newTagParentId}
-        title={newTagParentId ? '新建子标签' : '新建标签'}
-        animated={false}
-      />
+    </div>  {/* 关闭侧边栏容器 */}
+    <CreateTagModal
+      isOpen={showAddTag}
+      onClose={() => setShowAddTag(false)}
+      onCreate={(tag) => {
+        addTag(tag);
+        if (newTagParentId) {
+          setExpandedTags(prev => { const n = new Set(prev); n.add(newTagParentId); return n; });
+        }
+        setNewTagParentId(null);
+      }}
+      parentTags={tags}
+      initialParentId={newTagParentId}
+      title={newTagParentId ? '新建子标签' : '新建标签'}
+      animated={false}
+    />
+    <CreateTagModal
+      isOpen={showEditTag !== null}
+      onClose={() => setShowEditTag(null)}
+      onCreate={(tag) => {
+        if (showEditTag) updateTag(showEditTag.id, { name: tag.name, colorType: tag.colorType, emoji: tag.emoji, color: tag.color });
+      }}
+      mode="edit"
+      initialData={showEditTag ? { name: showEditTag.name, type: showEditTag.type, emoji: showEditTag.emoji, color: showEditTag.color } : undefined}
+      animated={false}
+    />
+    {showDeleteTagConfirm && <DeleteConfirmDialog {...showDeleteTagConfirm} onCancel={() => setShowDeleteTagConfirm(null)} onConfirm={() => { deleteTag(showDeleteTagConfirm.id); setShowDeleteTagConfirm(null); }} />}
 
-      {/* 重命名标签弹窗 */}
-      <CreateTagModal
-        isOpen={showEditTag !== null}
-        onClose={() => setShowEditTag(null)}
-        onCreate={(tag) => {
-          if (showEditTag) {
-            updateTag(showEditTag.id, {
-              name: tag.name,
-              colorType: tag.colorType,
-              emoji: tag.emoji,
-              color: tag.color,
-            });
-          }
-        }}
-        mode="edit"
-        initialData={showEditTag ? { name: showEditTag.name, type: showEditTag.type, emoji: showEditTag.emoji, color: showEditTag.color } : undefined}
-        animated={false}
-      />
-
-      {/* 删除确认弹窗 */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowDeleteConfirm(null)}>
-          <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-96 max-w-[90vw] shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                <AlertTriangle size={20} className="text-red-500" />
-              </div>
-              <h3 className="font-bold text-lg text-zinc-900 dark:text-white">删除标签</h3>
+    <CreatePersonModal
+      isOpen={showAddPerson}
+      onClose={() => setShowAddPerson(false)}
+      onCreate={(person) => {
+        addPerson(person);
+        if (newPersonParentId) {
+          setExpandedPeople(prev => { const n = new Set(prev); n.add(newPersonParentId); return n; });
+        }
+        setNewPersonParentId(null);
+      }}
+      parentPeople={people}
+      initialParentId={newPersonParentId}
+    />
+    <CreatePersonModal
+      isOpen={showEditPerson !== null}
+      onClose={() => setShowEditPerson(null)}
+      onCreate={(data) => {
+        if (showEditPerson) updatePerson(showEditPerson.id, { name: data.name, nickname: data.nickname, email: data.email });
+      }}
+      mode="edit"
+      initialData={showEditPerson || undefined}
+    />
+    {showDeletePersonConfirm && (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowDeletePersonConfirm(null)}>
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-96 max-w-[90vw] shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <AlertTriangle size={20} className="text-red-500" />
             </div>
-            
-            <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-              确定要删除标签 <span className="font-medium text-zinc-900 dark:text-white">"{showDeleteConfirm.name}"</span> 吗？
-            </p>
-            
-            {showDeleteConfirm.taskCount > 0 && (
-              <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
-                <p className="text-sm text-amber-700 dark:text-amber-400">
-                  ⚠️ 当前有 <strong>{showDeleteConfirm.taskCount}</strong> 个任务使用了此标签，
-                  删除后这些任务的标签也会被移除。
-                </p>
-              </div>
-            )}
-            
-            {showDeleteConfirm.subTagCount > 0 && (
-              <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
-                <p className="text-sm text-amber-700 dark:text-amber-400">
-                  📁 此标签下还有 <strong>{showDeleteConfirm.subTagCount}</strong> 个子标签，将会一并删除。
-                </p>
-              </div>
-            )}
-            
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(null)}
-                className="flex-1 py-2 border border-zinc-200 dark:border-zinc-700 rounded-xl"
-              >
-                取消
-              </button>
-              <button
-                onClick={confirmDelete}
-                className="flex-1 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors"
-              >
-                确认删除
-              </button>
-            </div>
+            <h3 className="font-bold text-lg text-zinc-900 dark:text-white">删除人员</h3>
+          </div>
+          <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+            确定要删除 <span className="font-medium text-zinc-900 dark:text-white">"{showDeletePersonConfirm.name}"</span> 吗？任务中的引用不会受影响。
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setShowDeletePersonConfirm(null)} className="flex-1 py-2 border border-zinc-200 dark:border-zinc-700 rounded-xl">取消</button>
+            <button onClick={() => { deletePerson(showDeletePersonConfirm.id); setShowDeletePersonConfirm(null); }} className="flex-1 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors">确认删除</button>
           </div>
         </div>
-      )}
+      </div>
+    )}
+    </Fragment>
+  );
+
+  // ========== 标签树节点渲染 ==========
+  function renderTagItem(tag: TagWithChildren, level: number = 0) {
+    const isSelected = selectedTags.includes(tag.id);
+    const hasChildren = tag.children.length > 0;
+    const isExpanded = tag.isExpanded;
+    const taskCount = getTagTaskCount(tag.id);
+
+    return (
+      <div key={tag.id}>
+        <div
+          draggable
+          onDragStart={(e) => handleDragStart(e, tag.id)}
+          onDragOver={(e) => handleDragOver(e, tag.id, setDragOverTagId, setTagDropPosition)}
+          onDragLeave={() => { setDragOverTagId(null); setTagDropPosition(null); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const dragId = e.dataTransfer.getData('text/plain');
+            if (dragId === tag.id || !tagDropPosition) { setDragOverTagId(null); setTagDropPosition(null); return; }
+            moveTag(dragId, tag.id, tagDropPosition);
+            setDragOverTagId(null); setTagDropPosition(null);
+          }}
+          className={`group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-move transition-all ${
+            getDropIndicatorClass(tag.id, 'before', dragOverTagId, tagDropPosition)
+          } ${getDropIndicatorClass(tag.id, 'after', dragOverTagId, tagDropPosition)}
+            ${getDropIndicatorClass(tag.id, 'inside', dragOverTagId, tagDropPosition)} ${
+            isSelected
+              ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'
+              : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+          }`}
+          style={{ marginLeft: level * 16 }}
+        >
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
+              <GripVertical size={12} className="text-zinc-400" />
+            </div>
+            {hasChildren ? (
+              <button onClick={() => toggleExpandTag(tag.id)} className="flex-shrink-0 p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded">
+                {isExpanded ? <ChevronDown size={12} /> : <ChevronRightIcon size={12} />}
+              </button>
+            ) : <div className="w-4" />}
+            <button onClick={() => onTagToggle(tag.id)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+              {tag.colorType === 'emoji' ? <span className="text-base">{tag.emoji}</span> : <div className={`w-2.5 h-2.5 rounded-full ${COLOR_OPTIONS.find(c => c.name === tag.color)?.class}`} />}
+              <span className="text-sm truncate">{tag.name}</span>
+              {taskCount > 0 && <span className="text-xs text-zinc-400 ml-1">({taskCount})</span>}
+            </button>
+          </div>
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => handleEditTag(tag)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="重命名"><Edit2 size={12} /></button>
+            <button onClick={() => handleAddSiblingTag(tag.id)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="添加同级标签"><FilePlus size={12} /></button>
+            <button onClick={() => handleAddChildTag(tag.id)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="添加子标签"><FolderPlus size={12} /></button>
+            <button onClick={() => handleDeleteTagClick(tag.id, tag.name)} className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-colors" title="删除标签"><X size={12} /></button>
+          </div>
+        </div>
+        <AnimatePresence>
+          {isExpanded && hasChildren && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+              {tag.children.map(child => renderTagItem(child, level + 1))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  // ========== 人员树节点渲染 ==========
+  function renderPersonItem(person: PersonWithChildren, level: number = 0) {
+    const hasChildren = person.children.length > 0;
+    const isExpanded = person.isExpanded;
+    const label = person.nickname ? `${person.name}（${person.nickname}）` : person.name;
+    const personTaskCount = getPersonTaskCount(person);
+
+    return (
+      <div key={person.id}>
+        <div
+          draggable
+          onDragStart={(e) => handleDragStart(e, person.id)}
+          onDragOver={(e) => handleDragOver(e, person.id, setDragOverPersonId, setPersonDropPosition)}
+          onDragLeave={() => { setDragOverPersonId(null); setPersonDropPosition(null); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            const dragId = e.dataTransfer.getData('text/plain');
+            if (dragId === person.id || !personDropPosition) { setDragOverPersonId(null); setPersonDropPosition(null); return; }
+            movePerson(dragId, person.id, personDropPosition);
+            setDragOverPersonId(null); setPersonDropPosition(null);
+          }}
+          className={`group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-move transition-all ${
+            getDropIndicatorClass(person.id, 'before', dragOverPersonId, personDropPosition)
+          } ${getDropIndicatorClass(person.id, 'after', dragOverPersonId, personDropPosition)}
+            ${getDropIndicatorClass(person.id, 'inside', dragOverPersonId, personDropPosition)}
+          text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800`}
+          style={{ marginLeft: level * 16 }}
+        >
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <div className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
+              <GripVertical size={12} className="text-zinc-400" />
+            </div>
+            {hasChildren ? (
+              <button onClick={() => toggleExpandPerson(person.id)} className="flex-shrink-0 p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded">
+                {isExpanded ? <ChevronDown size={12} /> : <ChevronRightIcon size={12} />}
+              </button>
+            ) : <div className="w-4" />}
+            <div className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+              <span className="text-sm truncate">{label}</span>
+              {personTaskCount > 0 && <span className="text-xs text-zinc-400 ml-0.5">({personTaskCount})</span>}
+              {person.email && <span className="text-xs text-zinc-400 truncate hidden group-hover:inline">· {person.email}</span>}
+            </div>
+          </div>
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => handleEditPerson(person)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="编辑"><Edit2 size={12} /></button>
+            <button onClick={() => handleAddSiblingPerson(person.id)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="添加同级"><FilePlus size={12} /></button>
+            <button onClick={() => handleAddChildPerson(person.id)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="添加子节点"><FolderPlus size={12} /></button>
+            {!person.autoCreated && (
+              <button onClick={() => handleDeletePersonClick(person.id, person.name)} className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-colors" title="删除"><X size={12} /></button>
+            )}
+          </div>
+        </div>
+        <AnimatePresence>
+          {isExpanded && hasChildren && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+              {person.children.map(child => renderPersonItem(child, level + 1))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+}
+
+// ========== 删除确认弹窗（标签专用） ==========
+function DeleteConfirmDialog({ id, name, taskCount, subTagCount, onCancel, onConfirm }: {
+  id: string; name: string; taskCount: number; subTagCount: number; onCancel: () => void; onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={onCancel}>
+      <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 w-96 max-w-[90vw] shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+            <AlertTriangle size={20} className="text-red-500" />
+          </div>
+          <h3 className="font-bold text-lg text-zinc-900 dark:text-white">删除标签</h3>
+        </div>
+        <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+          确定要删除标签 <span className="font-medium text-zinc-900 dark:text-white">"{name}"</span> 吗？
+        </p>
+        {taskCount > 0 && (
+          <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              ⚠️ 当前有 <strong>{taskCount}</strong> 个任务使用了此标签，删除后这些任务的标签也会被移除。
+            </p>
+          </div>
+        )}
+        {subTagCount > 0 && (
+          <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              📁 此标签下还有 <strong>{subTagCount}</strong> 个子标签，将会一并删除。
+            </p>
+          </div>
+        )}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-2 border border-zinc-200 dark:border-zinc-700 rounded-xl">取消</button>
+          <button onClick={onConfirm} className="flex-1 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors">确认删除</button>
+        </div>
+      </div>
     </div>
   );
 }

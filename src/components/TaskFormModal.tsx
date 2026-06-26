@@ -6,6 +6,7 @@ import { X, Calendar, Flag, Tag as TagIcon, Plus } from 'lucide-react';
 import { useTaskStore, Tag } from '../store/useTaskStore';
 import { getTagDisplay } from '../utils/tagUtils';
 import CreateTagModal from './CreateTagModal';
+import PersonInput from './PersonInput';
 
 interface TaskFormModalProps {
   isOpen: boolean;
@@ -172,27 +173,19 @@ export default function TaskFormModal({ isOpen, onClose, tags }: TaskFormModalPr
                 {/* 发起人 / 作用对象 */}
                 <div className="flex gap-3">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400 mb-1">
-                      👤 发起人
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="发起人"
+                    <PersonInput
                       value={createdBy}
-                      onChange={(e) => setCreatedBy(e.target.value)}
-                      className="w-full p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                      onChange={setCreatedBy}
+                      placeholder="发起人"
+                      label="👤 发起人"
                     />
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400 mb-1">
-                      🎯 作用对象
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="执行者"
+                    <PersonInput
                       value={assignedTo}
-                      onChange={(e) => setAssignedTo(e.target.value)}
-                      className="w-full p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                      onChange={setAssignedTo}
+                      placeholder="执行者"
+                      label="🎯 作用对象"
                     />
                   </div>
                 </div>

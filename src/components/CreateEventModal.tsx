@@ -75,9 +75,11 @@ export default function CreateEventModal({
         taskId,
         type,
         content: content.trim(),
-        timestamp: new Date().toISOString(),   // 等于 createdAt
+        timestamp: new Date().toISOString(),
         estimatedTime: type === 'completion' ? (estimatedTime.trim() || undefined) : undefined,
-        order: 0,  // 新建默认排最前，store 中会重新编号
+        updatedAt: new Date().toISOString(),
+        deleted: false,
+        order: 0,
       });
     }
 

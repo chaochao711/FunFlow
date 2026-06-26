@@ -24,7 +24,6 @@ interface TaskCardProps {
   onDeleteEvent?: (eventId: string) => void;
   onToggleEventComplete?: (eventId: string) => void;
   onEditEvent?: (event: TaskEvent) => void;
-  changeIndicator?: 'modified' | 'status-changed';
   allTasks?: Task[];
   taskEvents?: TaskEvent[];
   keepTimelineOpen?: boolean;
@@ -76,7 +75,6 @@ export default function TaskCard({
   onDeleteEvent,
   onToggleEventComplete,
   onEditEvent,
-  changeIndicator,
   allTasks = [],
   taskEvents = [],
   keepTimelineOpen = false,
@@ -191,18 +189,6 @@ export default function TaskCard({
     >
       {hasDueMask && (
         <div className={`absolute inset-0 pointer-events-none ${maskClass}`} />
-      )}
-
-      {/* 状态修改指示器 */}
-      {changeIndicator && (
-        <div
-          className={`absolute top-2 right-2 w-2.5 h-2.5 rounded-full z-20 ${
-            changeIndicator === 'status-changed'
-              ? 'bg-green-500 ring-2 ring-green-200 dark:ring-green-900'
-              : 'bg-orange-500 ring-2 ring-orange-200 dark:ring-orange-900'
-          }`}
-          title={changeIndicator === 'status-changed' ? '状态已更新' : '内容已修改'}
-        />
       )}
 
       <div className="relative p-4 z-10">

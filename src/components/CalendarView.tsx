@@ -102,14 +102,8 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
         setPanelPos({ x: rect.left + rect.width / 2, y: rect.bottom });
         setPanelTask(newTask);
         setShowPanel(true);
+	        showTimerRef.current = null;
         panelTaskIdRef.current = newTask.id;
-        catchTimerRef.current = setTimeout(() => {
-          if (!isMouseInPanelRef.current && !isMouseOnEventRef.current) {
-            setShowPanel(false);
-            setPanelTask(null);
-            panelTaskIdRef.current = null;
-          }
-        }, 1500);
       }, 220); // framer-motion exit 动画 150ms + 缓冲
       return;
     }
@@ -124,27 +118,35 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
       setPanelPos({ x: rect.left + rect.width / 2, y: rect.bottom });
       setPanelTask(task);
       setShowPanel(true);
+	        showTimerRef.current = null;
       isMouseInPanelRef.current = false;
+    }, 150);
+  }, []);
+
+  const handleEventMouseLeave = useCallback(() => {
+    isMouseOnEventRef.current = false;
+
+    if (showTimerRef.current) {
+      // 面板还没弹出 → 取消
+      clearTimeout(showTimerRef.current);
+      showTimerRef.current = null;
+      clearTimers();
+      panelTaskIdRef.current = null;
+      return;
+    }
+
+    // 面板已弹出 → 启动 1.5s 关闭倒计时
+    if (panelTaskIdRef.current) {
+      if (catchTimerRef.current) clearTimeout(catchTimerRef.current);
       catchTimerRef.current = setTimeout(() => {
+        catchTimerRef.current = null;
         if (!isMouseInPanelRef.current && !isMouseOnEventRef.current) {
           setShowPanel(false);
           setPanelTask(null);
           panelTaskIdRef.current = null;
         }
       }, 1500);
-    }, 150);
-  }, []);
-
-  const handleEventMouseLeave = useCallback(() => {
-    isMouseOnEventRef.current = false;
-    // 只取消 show 定时器（面板还没弹出）
-    if (showTimerRef.current) {
-      clearTimeout(showTimerRef.current);
-      showTimerRef.current = null;
-      clearTimers();
-      panelTaskIdRef.current = null;
     }
-    // 面板已弹出时不调度任何 hide（由 catch timer 检查 isMouseOnEventRef）
   }, []);
 
   // ── 面板鼠标进出：面板的唯一隐藏途径 ──
