@@ -399,12 +399,81 @@ export const useTaskStore = create<TaskStore>()(
       },
 
       updatePerson: (id, updates) => {
-        useSyncStore.getState().markPersonDirty(id);
-        return set((state) => ({
-          people: state.people.map((p) =>
+        const state = get();
+        const oldPerson = state.people.find(p => p.id === id);
+        if (!oldPerson) {
+          useSyncStore.getState().markPersonDirty(id);
+          return set((s) => ({ people: s.people.map(p => p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p) }));
+        }
+
+        const newName = updates.name ?? oldPerson.name;
+        const newNick = updates.nickname ?? oldPerson.nickname;
+        const nameChanged = newName !== oldPerson.name;
+        const nickChanged = newNick !== oldPerson.nickname;
+
+        // 检查新名称是否命中已有其他人员（合并去重）
+        const matchByName = state.people.find(p => p.id !== id && p.name === newName);
+        const matchByNick = newNick ? state.people.find(p => p.id !== id && p.nickname === newNick) : null;
+        const mergeTarget = matchByName || matchByNick;
+
+        if (mergeTarget) {
+          // 合并：将旧人员的引用迁移到目标人员，删除旧人员记录
+          const mergeName = mergeTarget.name;
+          const mergeNick = mergeTarget.nickname;
+          const updatedTasks = state.tasks.map(t => {
+            let cb = t.createdBy;
+            let ab = t.assignedTo;
+            let changed = false;
+            if (nameChanged) {
+              if (cb === oldPerson.name) { cb = mergeName; changed = true; }
+              if (ab === oldPerson.name) { ab = mergeName; changed = true; }
+            }
+            if (nickChanged && oldPerson.nickname) {
+              if (cb === oldPerson.nickname) { cb = mergeNick || mergeName; changed = true; }
+              if (ab === oldPerson.nickname) { ab = mergeNick || mergeName; changed = true; }
+            }
+            return changed ? { ...t, createdBy: cb, assignedTo: ab, updatedAt: new Date().toISOString() } : t;
+          });
+          const dirtyIds: string[] = [];
+          updatedTasks.forEach((t, i) => {
+            if (t !== state.tasks[i]) dirtyIds.push(t.id);
+          });
+          if (dirtyIds.length > 0) setTimeout(() => useSyncStore.getState().markTasksDirty(dirtyIds), 0);
+          useSyncStore.getState().markPersonDirty(id);
+          useSyncStore.getState().markPersonDirty(mergeTarget.id);
+          return set({ tasks: updatedTasks, people: state.people.filter(p => p.id !== id) });
+        }
+
+        // 无冲突：普通改名 + 同步更新任务引用
+        if (nameChanged || nickChanged) {
+          const oldName = oldPerson.name;
+          const oldNick = oldPerson.nickname;
+          const updatedTasks = state.tasks.map(t => {
+            let cb = t.createdBy;
+            let ab = t.assignedTo;
+            let changed = false;
+            if (nameChanged) {
+              if (cb === oldName) { cb = newName; changed = true; }
+              if (ab === oldName) { ab = newName; changed = true; }
+            }
+            if (nickChanged && oldNick) {
+              if (cb === oldNick) { cb = newNick; changed = true; }
+              if (ab === oldNick) { ab = newNick; changed = true; }
+            }
+            return changed ? { ...t, createdBy: cb, assignedTo: ab, updatedAt: new Date().toISOString() } : t;
+          });
+          const dirtyIds: string[] = [];
+          updatedTasks.forEach((t, i) => { if (t !== state.tasks[i]) dirtyIds.push(t.id); });
+          if (dirtyIds.length > 0) setTimeout(() => useSyncStore.getState().markTasksDirty(dirtyIds), 0);
+          useSyncStore.getState().markPersonDirty(id);
+          return set({ tasks: updatedTasks, people: state.people.map(p =>
             p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
-          ),
-        }));
+          )});
+        }
+
+        // 仅邮箱等非名称字段变更
+        useSyncStore.getState().markPersonDirty(id);
+        return set((s) => ({ people: s.people.map(p => p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p) }));
       },
 
       deletePerson: (id) => {
@@ -422,40 +491,22 @@ export const useTaskStore = create<TaskStore>()(
           if (dragIndex === -1 || targetIndex === -1) return state;
 
           const dragPerson = { ...state.people[dragIndex] };
-          const targetPerson = state.people[targetIndex];
           let newPeople = [...state.people];
 
           newPeople.splice(dragIndex, 1);
           let newTargetIndex = newPeople.findIndex(p => p.id === targetId);
 
-          if (position === 'inside') {
-            dragPerson.parentId = targetPerson.id;
-            dragPerson.level = targetPerson.level + 1;
-            const childrenCount = newPeople.filter(p => p.parentId === targetPerson.id).length;
-            dragPerson.order = childrenCount;
-            newPeople.splice(newTargetIndex + 1 + childrenCount, 0, dragPerson);
-          } else {
-            dragPerson.parentId = targetPerson.parentId;
-            dragPerson.level = targetPerson.level;
-            const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
-            newPeople.splice(insertIndex, 0, dragPerson);
-          }
+          // 人员扁平无层级，inside 等同于 after
+          dragPerson.parentId = null;
+          dragPerson.level = 0;
+          const insertIndex = position === 'before' ? newTargetIndex : newTargetIndex + 1;
+          newPeople.splice(insertIndex, 0, dragPerson);
 
-          const regroup = (parentId: string | null) => {
-            const siblings = newPeople.filter(p => p.parentId === parentId);
-            siblings.forEach((p, idx) => { p.order = idx; });
-          };
+          // 重算所有 order
+          newPeople.forEach((p, idx) => { p.order = idx; });
 
-          const toMark: string[] = [dragId, targetId];
-          regroup(dragPerson.parentId);
-          const dragParent = dragPerson.parentId;
-          newPeople.filter(p => p.parentId === dragParent).forEach(p => { if (!toMark.includes(p.id)) toMark.push(p.id); });
-          if (position === 'inside') {
-            regroup(targetPerson.id);
-            newPeople.filter(p => p.parentId === targetPerson.id).forEach(p => { if (!toMark.includes(p.id)) toMark.push(p.id); });
-          }
-
-          setTimeout(() => useSyncStore.getState().markPeopleDirty(toMark), 0);
+          const allIds = newPeople.map(p => p.id);
+          setTimeout(() => useSyncStore.getState().markPeopleDirty(allIds), 0);
           return { people: newPeople };
         }),
 

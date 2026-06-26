@@ -28,6 +28,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
   const {
     tasks,
     tags,
+    people,
     sidebarOpen,
     toggleSidebar,
     selectedTaskId,
@@ -45,6 +46,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [filterPriority, setFilterPriority] = useState<string | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedPersons, setSelectedPersons] = useState<string[]>([]);
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'upcoming' | 'overdue' | null>(null);
   const [sortBy, setSortBy] = useState<'status' | 'dueDate' | 'priority' | 'created'>('status');
   const [regexError, setRegexError] = useState(false);
@@ -65,6 +67,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
     setFilterStatus(null);
     setFilterPriority(null);
     setSelectedTags([]);
+    setSelectedPersons([]);
     setDateFilter(null);
     setSearchQuery('');
     setRegexError(false);
@@ -135,6 +138,12 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
     );
   };
 
+  const togglePerson = (personId: string) => {
+    setSelectedPersons(prev =>
+      prev.includes(personId) ? prev.filter(p => p !== personId) : [...prev, personId]
+    );
+  };
+
   // ========== 筛选排序 ==========
 
   const filteredTasks = useMemo(() => {
@@ -142,11 +151,25 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
       ? getExpandedTagIds(selectedTags, tags)
       : [];
 
+    // 人员筛选：根据选中的 person ID 获取姓名集合
+    const personNames = selectedPersons.length > 0
+      ? new Set(selectedPersons.flatMap(pid => {
+          const p = people.find(p => p.id === pid);
+          return p ? [p.name, p.nickname].filter(Boolean) : [];
+        }))
+      : null;
+
     return tasks.filter(t => !t.deleted).filter(task => {
       // 搜索匹配（标题 + 发起人 + 执行者）
       if (!matchesSearch(task.title, searchQuery, useRegex) &&
           !matchesSearch(task.createdBy || '', searchQuery, useRegex) &&
           !matchesSearch(task.assignedTo || '', searchQuery, useRegex)) return false;
+      // 人员筛选
+      if (personNames && personNames.size > 0) {
+        const taskCreatedBy = task.createdBy || '';
+        const taskAssignedTo = task.assignedTo || '';
+        if (!personNames.has(taskCreatedBy) && !personNames.has(taskAssignedTo)) return false;
+      }
       // 状态筛选
       if (filterStatus && task.status !== filterStatus) return false;
       // 优先级筛选
@@ -168,7 +191,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
       }
       return true;
     });
-  }, [tasks, searchQuery, useRegex, filterStatus, filterPriority, selectedTags, tags, dateFilter]);
+  }, [tasks, searchQuery, useRegex, filterStatus, filterPriority, selectedTags, tags, dateFilter, selectedPersons, people]);
 
   const filteredAndSortedTasks = useMemo(() => {
     const activeFiltered = filteredTasks.filter(t => !t.archived);
@@ -222,7 +245,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
     { value: 'created', label: '🕐 按创建时间' },
   ];
 
-  const hasActiveFilters = filterStatus !== null || filterPriority !== null || dateFilter !== null || selectedTags.length > 0 || searchQuery !== '';
+  const hasActiveFilters = filterStatus !== null || filterPriority !== null || dateFilter !== null || selectedTags.length > 0 || selectedPersons.length > 0 || searchQuery !== '';
 
   const handleArchiveClick = () => {
     clearAllFilters();
@@ -316,6 +339,9 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
           selectedTags={selectedTags}
           onTagToggle={toggleTag}
           onClearTags={() => setSelectedTags([])}
+          selectedPersons={selectedPersons}
+          onPersonToggle={togglePerson}
+          onClearPersons={() => setSelectedPersons([])}
         />
 
         <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-72' : 'ml-0'}`}>
@@ -404,6 +430,15 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
                       <button onClick={() => setSearchQuery('')} className="hover:text-zinc-600"><X size={12} /></button>
                     </span>
                   )}
+                  {selectedPersons.map(pid => {
+                    const person = people.find(p => p.id === pid);
+                    return person && (
+                      <span key={pid} className="px-2 py-1 bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 rounded-full flex items-center gap-1">
+                        👤 {person.nickname || person.name}
+                        <button onClick={() => togglePerson(pid)} className="hover:text-teal-800"><X size={12} /></button>
+                      </span>
+                    );
+                  })}
                 </div>
               )}
 

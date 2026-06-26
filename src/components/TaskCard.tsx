@@ -85,6 +85,8 @@ export default function TaskCard({
   const [showTimeline, setShowTimeline] = useState(false);
   const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const deleteResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const eventHoverDelay = useTaskStore(s => s.eventHoverDelay);
   const { reorderEvents } = useEventStore();
@@ -170,12 +172,20 @@ export default function TaskCard({
         setIsPriorityExpanded(false);
       }
     };
-    
+
     if (isPriorityExpanded) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isPriorityExpanded]);
+
+  // 删除确认自动重置
+  useEffect(() => {
+    if (confirmingDelete) {
+      deleteResetRef.current = setTimeout(() => setConfirmingDelete(false), 3000);
+      return () => { if (deleteResetRef.current) clearTimeout(deleteResetRef.current); };
+    }
+  }, [confirmingDelete]);
 
   return (
     <motion.div
@@ -224,11 +234,22 @@ export default function TaskCard({
                   <RotateCcw size={16} />
                 </button>
                 <button
-                  onClick={onDelete}
-                  className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all"
+                  onClick={() => {
+                    if (confirmingDelete) {
+                      onDelete?.();
+                      setConfirmingDelete(false);
+                    } else {
+                      setConfirmingDelete(true);
+                    }
+                  }}
+                  className={`p-1.5 rounded-lg transition-all ${
+                    confirmingDelete
+                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 scale-110'
+                      : 'text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30'
+                  }`}
                   title="移至回收站"
                 >
-                  <Trash2 size={16} />
+                  {confirmingDelete ? '确认删除？' : <Trash2 size={16} />}
                 </button>
               </>
             ) : (
@@ -258,14 +279,21 @@ export default function TaskCard({
                 </button>
                 <button
                   onClick={() => {
-                    if (confirm('确定删除这个任务吗？删除后可到归档中恢复。')) {
+                    if (confirmingDelete) {
                       onDelete?.();
+                      setConfirmingDelete(false);
+                    } else {
+                      setConfirmingDelete(true);
                     }
                   }}
-                  className="p-1.5 rounded-lg text-zinc-500 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600 transition-all"
+                  className={`p-1.5 rounded-lg transition-all ${
+                    confirmingDelete
+                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 scale-110'
+                      : 'text-zinc-500 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600'
+                  }`}
                   title="删除"
                 >
-                  <Trash2 size={16} />
+                  {confirmingDelete ? '确认删除？' : <Trash2 size={16} />}
                 </button>
               </>
             )}

@@ -26,6 +26,9 @@ interface SidebarProps {
   selectedTags: string[];
   onTagToggle: (tagId: string) => void;
   onClearTags: () => void;
+  selectedPersons?: string[];
+  onPersonToggle?: (personId: string) => void;
+  onClearPersons?: () => void;
 }
 
 interface TagWithChildren extends Tag {
@@ -33,12 +36,7 @@ interface TagWithChildren extends Tag {
   isExpanded?: boolean;
 }
 
-interface PersonWithChildren extends Person {
-  children: PersonWithChildren[];
-  isExpanded?: boolean;
-}
-
-export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: SidebarProps) {
+export default function Sidebar({ selectedTags, onTagToggle, onClearTags, selectedPersons = [], onPersonToggle, onClearPersons }: SidebarProps) {
   const { tasks, tags, people, sidebarOpen, toggleSidebar, addTag, updateTag, deleteTag, moveTag,
     addPerson, updatePerson, deletePerson, movePerson } = useTaskStore();
 
@@ -54,11 +52,9 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
   const [tagDropPosition, setTagDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
 
   // ===== 人员状态 =====
-  const [expandedPeople, setExpandedPeople] = useState<Set<string>>(new Set());
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [showEditPerson, setShowEditPerson] = useState<Person | null>(null);
-  const [showDeletePersonConfirm, setShowDeletePersonConfirm] = useState<{ id: string; name: string } | null>(null);
-  const [newPersonParentId, setNewPersonParentId] = useState<string | null>(null);
+  const [showDeletePersonConfirm, setShowDeletePersonConfirm] = useState<{ id: string; name: string; taskCount: number } | null>(null);
   const [dragOverPersonId, setDragOverPersonId] = useState<string | null>(null);
   const [personDropPosition, setPersonDropPosition] = useState<'before' | 'after' | 'inside' | null>(null);
 
@@ -83,11 +79,12 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
     setExpandedTags(newExpanded);
   };
 
-  const getTagTaskCount = (tagId: string) => tasks.filter(task => task.tags?.includes(tagId)).length;
+  const getTagTaskCount = (tagId: string) => tasks.filter(task => task.tags?.includes(tagId) && !task.archived && !task.deleted).length;
   const getSubTagCount = (tagId: string) => tags.filter(t => t.parentId === tagId).length;
   const getPersonTaskCount = (person: Person) => tasks.filter(task =>
-    task.createdBy === person.name || task.createdBy === person.nickname ||
-    task.assignedTo === person.name || task.assignedTo === person.nickname
+    !task.archived && !task.deleted &&
+    (task.createdBy === person.name || task.createdBy === person.nickname ||
+     task.assignedTo === person.name || task.assignedTo === person.nickname)
   ).length;
 
   const handleEditTag = (tag: Tag) => {
@@ -109,44 +106,25 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
     setExpandedTags(prev => { const n = new Set(prev); n.add(tagId); return n; });
   };
 
-  // ========== 人员树 ==========
+  // ========== 人员列表（扁平） ==========
 
-  const buildPersonTree = (parentId: string | null = null): PersonWithChildren[] => {
-    return people
-      .filter(p => p.parentId === parentId)
-      .sort((a, b) => a.order - b.order)
-      .map(p => ({
-        ...p,
-        children: buildPersonTree(p.id),
-        isExpanded: expandedPeople.has(p.id)
-      }));
-  };
-
-  const personTree = buildPersonTree();
-
-  const toggleExpandPerson = (personId: string) => {
-    const newExpanded = new Set(expandedPeople);
-    newExpanded.has(personId) ? newExpanded.delete(personId) : newExpanded.add(personId);
-    setExpandedPeople(newExpanded);
-  };
+  const sortedPeople = [...people].sort((a, b) => a.order - b.order);
 
   const handleEditPerson = (person: Person) => {
     setShowEditPerson(person);
   };
 
   const handleDeletePersonClick = (personId: string, name: string) => {
-    setShowDeletePersonConfirm({ id: personId, name });
+    const person = people.find(p => p.id === personId);
+    const taskCount = person ? tasks.filter(task => !task.archived && !task.deleted &&
+      (task.createdBy === person.name || task.createdBy === person.nickname ||
+       task.assignedTo === person.name || task.assignedTo === person.nickname)
+    ).length : 0;
+    setShowDeletePersonConfirm({ id: personId, name, taskCount });
   };
 
-  const handleAddSiblingPerson = (personId: string) => {
-    const p = people.find(p => p.id === personId);
-    if (p) { setNewPersonParentId(p.parentId); setShowAddPerson(true); }
-  };
-
-  const handleAddChildPerson = (personId: string) => {
-    setNewPersonParentId(personId);
+  const handleAddPerson = () => {
     setShowAddPerson(true);
-    setExpandedPeople(prev => { const n = new Set(prev); n.add(personId); return n; });
   };
 
   // ========== 通用拖拽处理 ==========
@@ -279,17 +257,24 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
           <>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">人员管理</h3>
-              <button
-                onClick={() => { setNewPersonParentId(null); setShowAddPerson(true); }}
-                className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
-                title="新建人员"
-              >
-                <Plus size={14} />
-              </button>
+              <div className="flex gap-1">
+                {selectedPersons.length > 0 && (
+                  <button onClick={onClearPersons} className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 px-2 py-1 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20">
+                    清除
+                  </button>
+                )}
+                <button
+                  onClick={handleAddPerson}
+                  className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                  title="新建人员"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-0.5">
-              {personTree.map(person => renderPersonItem(person, 0))}
+              {sortedPeople.map(person => renderPersonItem(person))}
             </div>
 
             {people.length === 0 && (
@@ -332,13 +317,7 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
       onClose={() => setShowAddPerson(false)}
       onCreate={(person) => {
         addPerson(person);
-        if (newPersonParentId) {
-          setExpandedPeople(prev => { const n = new Set(prev); n.add(newPersonParentId); return n; });
-        }
-        setNewPersonParentId(null);
       }}
-      parentPeople={people}
-      initialParentId={newPersonParentId}
     />
     <CreatePersonModal
       isOpen={showEditPerson !== null}
@@ -359,8 +338,15 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
             <h3 className="font-bold text-lg text-zinc-900 dark:text-white">删除人员</h3>
           </div>
           <p className="text-zinc-600 dark:text-zinc-400 mb-4">
-            确定要删除 <span className="font-medium text-zinc-900 dark:text-white">"{showDeletePersonConfirm.name}"</span> 吗？任务中的引用不会受影响。
+            确定要删除 <span className="font-medium text-zinc-900 dark:text-white">"{showDeletePersonConfirm.name}"</span> 吗？
           </p>
+          {showDeletePersonConfirm.taskCount > 0 && (
+            <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
+              <p className="text-sm text-amber-700 dark:text-amber-400">
+                ⚠️ 当前有 <strong>{showDeletePersonConfirm.taskCount}</strong> 个活跃任务引用了此人员，删除后这些任务中的引用将保留但不再关联此人员。
+              </p>
+            </div>
+          )}
           <div className="flex gap-3">
             <button onClick={() => setShowDeletePersonConfirm(null)} className="flex-1 py-2 border border-zinc-200 dark:border-zinc-700 rounded-xl">取消</button>
             <button onClick={() => { deletePerson(showDeletePersonConfirm.id); setShowDeletePersonConfirm(null); }} className="flex-1 py-2 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors">确认删除</button>
@@ -392,7 +378,7 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
             moveTag(dragId, tag.id, tagDropPosition);
             setDragOverTagId(null); setTagDropPosition(null);
           }}
-          className={`group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-move transition-all ${
+          className={`group relative flex items-center justify-between py-1.5 rounded-lg cursor-move transition-all ${
             getDropIndicatorClass(tag.id, 'before', dragOverTagId, tagDropPosition)
           } ${getDropIndicatorClass(tag.id, 'after', dragOverTagId, tagDropPosition)}
             ${getDropIndicatorClass(tag.id, 'inside', dragOverTagId, tagDropPosition)} ${
@@ -400,24 +386,23 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
               ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'
               : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
           }`}
-          style={{ marginLeft: level * 16 }}
+          style={{ paddingLeft: level * 16 + 24 }}
         >
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
-              <GripVertical size={12} className="text-zinc-400" />
-            </div>
-            {hasChildren ? (
-              <button onClick={() => toggleExpandTag(tag.id)} className="flex-shrink-0 p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded">
-                {isExpanded ? <ChevronDown size={12} /> : <ChevronRightIcon size={12} />}
-              </button>
-            ) : <div className="w-4" />}
-            <button onClick={() => onTagToggle(tag.id)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
-              {tag.colorType === 'emoji' ? <span className="text-base">{tag.emoji}</span> : <div className={`w-2.5 h-2.5 rounded-full ${COLOR_OPTIONS.find(c => c.name === tag.color)?.class}`} />}
-              <span className="text-sm truncate">{tag.name}</span>
-              {taskCount > 0 && <span className="text-xs text-zinc-400 ml-1">({taskCount})</span>}
-            </button>
+          {/* 拖拽把手 — 绝对定位不占空间 */}
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity px-1 z-10">
+            <GripVertical size={12} className="text-zinc-400" />
           </div>
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {hasChildren ? (
+            <button onClick={() => toggleExpandTag(tag.id)} className="flex-shrink-0 p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded mr-1">
+              {isExpanded ? <ChevronDown size={10} /> : <ChevronRightIcon size={10} />}
+            </button>
+          ) : <div className="w-3.5 mr-1 flex-shrink-0" />}
+          <button onClick={() => onTagToggle(tag.id)} className="flex items-center gap-1 flex-1 min-w-0 text-left">
+            {tag.colorType === 'emoji' ? <span className="text-sm flex-shrink-0">{tag.emoji}</span> : <div className={`w-2 h-2 rounded-full flex-shrink-0 ${COLOR_OPTIONS.find(c => c.name === tag.color)?.class}`} />}
+            <span className="text-sm leading-snug truncate">{tag.name}</span>
+            {taskCount > 0 && <span className="text-xs text-zinc-400 ml-0.5 flex-shrink-0">({taskCount})</span>}
+          </button>
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
             <button onClick={() => handleEditTag(tag)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="重命名"><Edit2 size={12} /></button>
             <button onClick={() => handleAddSiblingTag(tag.id)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="添加同级标签"><FilePlus size={12} /></button>
             <button onClick={() => handleAddChildTag(tag.id)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="添加子标签"><FolderPlus size={12} /></button>
@@ -435,10 +420,8 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
     );
   }
 
-  // ========== 人员树节点渲染 ==========
-  function renderPersonItem(person: PersonWithChildren, level: number = 0) {
-    const hasChildren = person.children.length > 0;
-    const isExpanded = person.isExpanded;
+  // ========== 人员列表节点渲染（扁平，无层级） ==========
+  function renderPersonItem(person: Person) {
     const label = person.nickname ? `${person.name}（${person.nickname}）` : person.name;
     const personTaskCount = getPersonTaskCount(person);
 
@@ -456,44 +439,27 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags }: Side
             movePerson(dragId, person.id, personDropPosition);
             setDragOverPersonId(null); setPersonDropPosition(null);
           }}
-          className={`group flex items-center justify-between px-2 py-1.5 rounded-lg cursor-move transition-all ${
-            getDropIndicatorClass(person.id, 'before', dragOverPersonId, personDropPosition)
-          } ${getDropIndicatorClass(person.id, 'after', dragOverPersonId, personDropPosition)}
-            ${getDropIndicatorClass(person.id, 'inside', dragOverPersonId, personDropPosition)}
-          text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800`}
-          style={{ marginLeft: level * 16 }}
+          className={(() => {
+            const classes = `group relative flex items-center justify-between py-1.5 rounded-lg cursor-move transition-all ${getDropIndicatorClass(person.id, 'before', dragOverPersonId, personDropPosition)} ${getDropIndicatorClass(person.id, 'after', dragOverPersonId, personDropPosition)} ${getDropIndicatorClass(person.id, 'inside', dragOverPersonId, personDropPosition)} ${selectedPersons.includes(person.id) ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`;
+            return classes;
+          })()}
+          style={{ paddingLeft: 24 }}
         >
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <div className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity">
-              <GripVertical size={12} className="text-zinc-400" />
-            </div>
-            {hasChildren ? (
-              <button onClick={() => toggleExpandPerson(person.id)} className="flex-shrink-0 p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded">
-                {isExpanded ? <ChevronDown size={12} /> : <ChevronRightIcon size={12} />}
-              </button>
-            ) : <div className="w-4" />}
-            <div className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
-              <span className="text-sm truncate">{label}</span>
-              {personTaskCount > 0 && <span className="text-xs text-zinc-400 ml-0.5">({personTaskCount})</span>}
-              {person.email && <span className="text-xs text-zinc-400 truncate hidden group-hover:inline">· {person.email}</span>}
-            </div>
+          {/* 拖拽把手 — 绝对定位不占空间 */}
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity px-1 z-10">
+            <GripVertical size={12} className="text-zinc-400" />
           </div>
+          <button onClick={() => onPersonToggle?.(person.id)} className="flex items-center gap-1 flex-1 min-w-0 text-left">
+            <span className="text-sm truncate">{label}</span>
+            {personTaskCount > 0 && <span className="text-xs text-zinc-400 ml-0.5">({personTaskCount})</span>}
+            {person.email && <span className="text-xs text-zinc-400 truncate hidden group-hover:inline">· {person.email}</span>}
+          </button>
           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button onClick={() => handleEditPerson(person)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="编辑"><Edit2 size={12} /></button>
-            <button onClick={() => handleAddSiblingPerson(person.id)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="添加同级"><FilePlus size={12} /></button>
-            <button onClick={() => handleAddChildPerson(person.id)} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="添加子节点"><FolderPlus size={12} /></button>
-            {!person.autoCreated && (
-              <button onClick={() => handleDeletePersonClick(person.id, person.name)} className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-colors" title="删除"><X size={12} /></button>
-            )}
+            <button onClick={() => handleAddPerson()} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded" title="新增人员"><FilePlus size={12} /></button>
+            <button onClick={() => handleDeletePersonClick(person.id, person.name)} className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-500 rounded transition-colors" title="删除"><X size={12} /></button>
           </div>
         </div>
-        <AnimatePresence>
-          {isExpanded && hasChildren && (
-            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-              {person.children.map(child => renderPersonItem(child, level + 1))}
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     );
   }

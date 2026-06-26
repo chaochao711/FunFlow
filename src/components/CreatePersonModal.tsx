@@ -1,4 +1,4 @@
-// src/components/CreatePersonModal.tsx — 人员创建/编辑弹窗
+// src/components/CreatePersonModal.tsx — 人员创建/编辑弹窗（扁平，无父节点）
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,8 +8,6 @@ interface CreatePersonModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreate: (person: Person) => void;
-  parentPeople?: Person[];
-  initialParentId?: string | null;
   mode?: 'create' | 'edit';
   initialData?: Person;
 }
@@ -18,15 +16,12 @@ export default function CreatePersonModal({
   isOpen,
   onClose,
   onCreate,
-  parentPeople,
-  initialParentId = null,
   mode = 'create',
   initialData,
 }: CreatePersonModalProps) {
   const [name, setName] = useState('');
   const [nickname, setNickname] = useState('');
   const [email, setEmail] = useState('');
-  const [parentId, setParentId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -39,23 +34,22 @@ export default function CreatePersonModal({
         setNickname('');
         setEmail('');
       }
-      setParentId(initialParentId);
     }
-  }, [isOpen, mode, initialData, initialParentId]);
+  }, [isOpen, mode, initialData]);
 
   const handleCreate = () => {
     if (!name.trim() && !nickname.trim()) return;
 
     const newPerson: Person = {
-      id: crypto.randomUUID(),
+      id: mode === 'edit' && initialData ? initialData.id : crypto.randomUUID(),
       name: name.trim(),
       nickname: nickname.trim() || undefined,
       email: email.trim() || undefined,
-      parentId,
+      parentId: null,
       level: 0,
-      order: parentPeople ? parentPeople.filter(p => p.parentId === parentId).length : 0,
+      order: 0,
       autoCreated: false,
-      createdAt: new Date().toISOString(),
+      createdAt: initialData?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
@@ -119,22 +113,6 @@ export default function CreatePersonModal({
         onChange={(e) => setEmail(e.target.value)}
         className="w-full p-3 border border-zinc-200 dark:border-zinc-700 rounded-xl mb-4 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
       />
-
-      {/* 父节点选择 */}
-      {!initialParentId && parentPeople && parentPeople.length > 0 && (
-        <select
-          value={parentId || ''}
-          onChange={(e) => setParentId(e.target.value || null)}
-          className="w-full p-3 border border-zinc-200 dark:border-zinc-700 rounded-xl mb-4 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
-        >
-          <option value="">顶级节点</option>
-          {parentPeople.filter(p => p.level < 2).map(p => (
-            <option key={p.id} value={p.id}>
-              {'  '.repeat(p.level)}{p.nickname ? `${p.name}（${p.nickname}）` : p.name}
-            </option>
-          ))}
-        </select>
-      )}
 
       {/* 按钮 */}
       <div className="flex gap-3">

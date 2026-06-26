@@ -1,12 +1,13 @@
-// src/views/TrashPage.tsx — 回收站视图（支持云端 7 天兜底）
+// src/views/TrashPage.tsx — 回收站视图（按时间分组 + 到期排序）
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RotateCcw, Calendar, Archive, ArrowLeft, Cloud, Loader2 } from 'lucide-react';
+import { RotateCcw, Archive, ArrowLeft, Cloud, Loader2, Clock, Calendar } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { loadTrashFromCloud } from '../services/syncService';
 import { useTaskStore } from '../store/useTaskStore';
 import { getTagDisplay, getTagColorClass } from '../utils/tagUtils';
+import { groupByTimeBucket, TIME_BUCKET_LABELS, TIME_BUCKET_ORDER, getRemainingDayBucket, REMAINING_BUCKET_ORDER } from '../utils/dateUtils';
 import AppHeader from '../components/AppHeader';
 import Sidebar from '../components/Sidebar';
 import TaskDetailDrawer from '../components/TaskDetailDrawer';
@@ -41,6 +42,7 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
   } = useTaskStore();
 
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedPersons, setSelectedPersons] = useState<string[]>([]);
   const [loadingCloud, setLoadingCloud] = useState(false);
 
   const trashedTasks = tasks.filter(t => t.deleted);
@@ -90,6 +92,11 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
             prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]
           )}
           onClearTags={() => setSelectedTags([])}
+          selectedPersons={selectedPersons}
+          onPersonToggle={(pid) => setSelectedPersons(prev =>
+            prev.includes(pid) ? prev.filter(p => p !== pid) : [...prev, pid]
+          )}
+          onClearPersons={() => setSelectedPersons([])}
         />
 
         <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-72' : 'ml-0'}`}>
@@ -138,92 +145,123 @@ export default function TrashPage({ isDark, onToggleTheme }: TrashPageProps) {
               </div>
             </div>
 
-            {/* 回收站任务列表 */}
+            {/* 回收站任务列表（按时间分组 + 到期排序） */}
             {trashedTasks.length === 0 ? (
               <div className="text-center py-20">
                 <div className="text-6xl mb-4 opacity-30">🗑️</div>
                 <p className="text-zinc-400 dark:text-zinc-500">回收站为空</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                <AnimatePresence>
-                  {trashedTasks.map(task => {
-                    const taskTags = (task.tags || []).map(tagId => tags.find(t => t.id === tagId)).filter(Boolean);
-                    const isOverdue = task.dueDate && task.dueDate < new Date().toISOString().split('T')[0];
-                    const remaining = task.deletedAt ? getRemainingDays(task.deletedAt) : TRASH_RETENTION_DAYS;
-                    const isExpiringSoon = remaining <= 2;
-
+              <div className="space-y-6">
+                {(() => {
+                  // 按删除时间分组
+                  const groups = groupByTimeBucket(trashedTasks, t => t.deletedAt || t.updatedAt);
+                  return TIME_BUCKET_ORDER.map(bucket => {
+                    const items = groups.get(bucket);
+                    if (!items || items.length === 0) return null;
+                    // 每组内按到期时间升序排列（即将过期在前）
+                    const sorted = [...items].sort((a, b) => {
+                      const ra = a.deletedAt ? getRemainingDays(a.deletedAt) : TRASH_RETENTION_DAYS;
+                      const rb = b.deletedAt ? getRemainingDays(b.deletedAt) : TRASH_RETENTION_DAYS;
+                      return ra - rb;
+                    });
                     return (
-                      <motion.div
-                        key={task.id}
-                        layout
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, x: -100 }}
-                        className="bg-white dark:bg-zinc-900 rounded-2xl p-4 shadow-lg border border-zinc-200 dark:border-zinc-700 hover:shadow-xl transition-all opacity-80"
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="font-medium text-zinc-900 dark:text-white line-through decoration-zinc-400">
-                                {task.title}
-                              </h3>
-                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
-                                已删除
-                              </span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${
-                                isExpiringSoon
-                                  ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
-                                  : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
-                              }`}>
-                                {remaining === 0 ? '即将清理' : `剩余 ${remaining} 天`}
-                              </span>
-                            </div>
-
-                            {task.description && (
-                              <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">
-                                {task.description}
-                              </p>
-                            )}
-
-                            <div className="flex items-center gap-3 mt-3 flex-wrap">
-                              {taskTags.map(tag => tag && (
-                                <span
-                                  key={tag.id}
-                                  className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${getTagColorClass(tag)}`}
-                                >
-                                  {getTagDisplay(tag)} {tag.name}
-                                </span>
-                              ))}
-
-                              {task.dueDate && (
-                                <div className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
-                                  <Calendar size={12} />
-                                  <span>{task.dueDate}</span>
-                                </div>
-                              )}
-
-                              {task.deletedAt && (
-                                <div className="flex items-center gap-1 text-xs text-zinc-400">
-                                  删除时间: {new Date(task.deletedAt).toLocaleString()}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* 仅保留恢复按钮 */}
-                          <button
-                            onClick={() => handleRestoreFromTrash(task.id)}
-                            className="p-2 rounded-lg text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-                            title="恢复到归档"
-                          >
-                            <RotateCcw size={18} />
-                          </button>
+                      <div key={bucket}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                            {TIME_BUCKET_LABELS[bucket]}
+                          </span>
+                          <span className="text-xs text-zinc-400">({items.length})</span>
+                          <div className="flex-1 h-px bg-zinc-200 dark:bg-zinc-800" />
                         </div>
-                      </motion.div>
+                        <AnimatePresence>
+                          <div className="space-y-3">
+                            {sorted.map(task => {
+                              const taskTags = (task.tags || []).map(tagId => tags.find(t => t.id === tagId)).filter(Boolean);
+                              const isOverdue = task.dueDate && task.dueDate < new Date().toISOString().split('T')[0];
+                              const remaining = task.deletedAt ? getRemainingDays(task.deletedAt) : TRASH_RETENTION_DAYS;
+                              const isExpiringSoon = remaining <= 2;
+                              const dayBucket = getRemainingDayBucket(remaining);
+
+                              return (
+                                <motion.div
+                                  key={task.id}
+                                  layout
+                                  initial={{ opacity: 0, y: 20 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, x: -100 }}
+                                  className="bg-white dark:bg-zinc-900 rounded-2xl p-4 shadow-lg border border-zinc-200 dark:border-zinc-700 hover:shadow-xl transition-all opacity-80"
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <h3 className="font-medium text-zinc-900 dark:text-white line-through decoration-zinc-400">
+                                          {task.title}
+                                        </h3>
+                                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">
+                                          已删除
+                                        </span>
+                                        <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                                          remaining <= 1
+                                            ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 font-medium'
+                                            : isExpiringSoon
+                                            ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+                                            : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400'
+                                        }`}>
+                                          <Clock size={10} />
+                                          {remaining === 0 ? `即将清理（${dayBucket}）` : `剩余 ${remaining} 天（${dayBucket}）`}
+                                        </span>
+                                      </div>
+
+                                      {task.description && (
+                                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">
+                                          {task.description}
+                                        </p>
+                                      )}
+
+                                      <div className="flex items-center gap-3 mt-3 flex-wrap">
+                                        {taskTags.map(tag => tag && (
+                                          <span
+                                            key={tag.id}
+                                            className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${getTagColorClass(tag)}`}
+                                          >
+                                            {getTagDisplay(tag)} {tag.name}
+                                          </span>
+                                        ))}
+
+                                        {task.dueDate && (
+                                          <div className={`flex items-center gap-1 text-xs ${isOverdue ? 'text-red-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
+                                            <Calendar size={12} />
+                                            <span>{task.dueDate}</span>
+                                          </div>
+                                        )}
+
+                                        {task.deletedAt && (
+                                          <div className="flex items-center gap-1 text-xs text-zinc-400">
+                                            删除时间: {new Date(task.deletedAt).toLocaleString()}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* 仅保留恢复按钮 */}
+                                    <button
+                                      onClick={() => handleRestoreFromTrash(task.id)}
+                                      className="p-2 rounded-lg text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                                      title="恢复到归档"
+                                    >
+                                      <RotateCcw size={18} />
+                                    </button>
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
+                          </div>
+                        </AnimatePresence>
+                      </div>
                     );
-                  })}
-                </AnimatePresence>
+                  });
+                })()}
               </div>
             )}
           </div>

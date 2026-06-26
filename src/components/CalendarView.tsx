@@ -9,7 +9,7 @@ import { EventClickArg, DateSelectArg, EventDropArg } from '@fullcalendar/core';
 import { Task, Tag } from '../store/useTaskStore';
 import { useTaskStore } from '../store/useTaskStore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Calendar as CalendarIcon, ChevronLeft, ChevronRight, List, Grid3x3, Plus } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, List, Grid3x3, Plus } from 'lucide-react';
 import { formatDateOnly } from '../utils/dateUtils';
 import EventTimeline from './EventTimeline';
 import CreateEventModal from './CreateEventModal';
@@ -45,8 +45,6 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewProps) {
   const calendarRef = useRef<FullCalendar>(null);
   const [currentView, setCurrentView] = useState<ViewMode>('dayGridMonth');
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [showTaskDetail, setShowTaskDetail] = useState(false);
   const { updateTask } = useTaskStore();
   const { events: allEvents, getEventsByTask, addEvent, updateEvent, deleteEvent, toggleEventComplete, reorderEvents } = useEventStore();
 
@@ -182,10 +180,9 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
     if (task) {
       setShowPanel(false);
       setPanelTask(null);
-      setSelectedTask(task);
-      setShowTaskDetail(true);
+      onTaskClick(taskId);
     }
-  }, [tasks]);
+  }, [tasks, onTaskClick]);
 
   const handleDateSelect = useCallback((info: DateSelectArg) => {
     console.log('选择日期:', info.startStr.split('T')[0]);
@@ -337,9 +334,22 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
             <div className="p-3 pb-1">
               <div className="flex items-start justify-between gap-2">
                 <h4 className="font-bold text-zinc-900 dark:text-white text-sm leading-tight break-words flex-1">{panelTask.title}</h4>
-                <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${statusConfig[panelTask.status]?.color || ''}`}>
-                  {statusConfig[panelTask.status]?.label || '未知'}
-                </span>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => {
+                      setShowPanel(false);
+                      setPanelTask(null);
+                      onTaskClick(panelTask.id);
+                    }}
+                    className="p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                    title="编辑任务"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-500"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${statusConfig[panelTask.status]?.color || ''}`}>
+                    {statusConfig[panelTask.status]?.label || '未知'}
+                  </span>
+                </div>
               </div>
 
               {/* 信息行 */}
@@ -389,73 +399,7 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
               />
             </div>
 
-            {/* 编辑任务按钮 */}
-            <div className="border-t border-zinc-100 dark:border-zinc-700 px-3 py-2">
-              <button
-                onClick={() => {
-                  setShowPanel(false);
-                  setPanelTask(null);
-                  setSelectedTask(panelTask);
-                  setShowTaskDetail(true);
-                }}
-                className="w-full py-1.5 text-xs text-center text-violet-600 dark:text-violet-400 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 rounded-lg transition-colors"
-              >
-                ✏️ 打开完整任务卡片
-              </button>
-            </div>
           </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ========== 任务详情弹窗 ========== */}
-      <AnimatePresence>
-        {showTaskDetail && selectedTask && (
-          <>
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onClick={() => setShowTaskDetail(false)} />
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl z-50 overflow-hidden"
-            >
-              <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-                <h3 className="font-bold text-lg text-zinc-900 dark:text-white">任务详情</h3>
-                <button onClick={() => setShowTaskDetail(false)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"><X size={18} /></button>
-              </div>
-              <div className="p-4">
-                <h4 className="text-xl font-medium text-zinc-900 dark:text-white mb-2">{selectedTask.title}</h4>
-                {selectedTask.description && <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">{selectedTask.description}</p>}
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="text-zinc-500 dark:text-zinc-400 w-20">优先级:</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${selectedTask.priority === 'high' ? 'bg-red-100 text-red-600' : selectedTask.priority === 'medium' ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
-                      {priorityConfig[selectedTask.priority]?.icon} {priorityConfig[selectedTask.priority]?.label}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-zinc-500 dark:text-zinc-400 w-20">状态:</span>
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${statusConfig[selectedTask.status]?.color || ''}`}>
-                      {statusConfig[selectedTask.status]?.label}
-                    </span>
-                  </div>
-                  {selectedTask.dueDate && <div className="flex items-center gap-2"><span className="text-zinc-500 dark:text-zinc-400 w-20">截止日期:</span><span>{selectedTask.dueDate}</span></div>}
-                  {selectedTask.tags && selectedTask.tags.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-zinc-500 dark:text-zinc-400 w-20">标签:</span>
-                      {selectedTask.tags.map(tagId => {
-                        const tag = tags.find(t => t.id === tagId);
-                        return tag && <span key={tag.id} className="text-xs px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800">{tag.colorType === 'emoji' ? tag.emoji : '📌'} {tag.name}</span>;
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-3 p-4 border-t border-zinc-200 dark:border-zinc-800">
-                <button onClick={() => { onTaskClick(selectedTask.id); setShowTaskDetail(false); }} className="flex-1 py-2 bg-violet-500 text-white rounded-xl font-medium hover:bg-violet-600">编辑任务</button>
-                <button onClick={() => setShowTaskDetail(false)} className="flex-1 py-2 border border-zinc-200 dark:border-zinc-700 rounded-xl">关闭</button>
-              </div>
-            </motion.div>
-          </>
         )}
       </AnimatePresence>
 

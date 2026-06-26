@@ -185,3 +185,68 @@ export function getDateGroupLabel(dateKey: string): string {
 
   return `${targetDate.getFullYear()}年${targetDate.getMonth() + 1}月${targetDate.getDate()}日`;
 }
+
+// ---- 时间桶分组（今天/昨天/本周/本月/更早） ----
+
+function getMonday(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export function getTimeBucketKey(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const todayStr = localDateStr(now);
+  const targetStr = localDateStr(date);
+
+  if (targetStr === todayStr) return 'today';
+  const yesterdayStr = localDateStr(new Date(now.getTime() - 86400000));
+  if (targetStr === yesterdayStr) return 'yesterday';
+
+  const monday = getMonday(now);
+  const sunday = new Date(monday);
+  sunday.setDate(sunday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  if (date >= monday && date <= sunday) return 'thisWeek';
+
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  if (date >= firstOfMonth) return 'thisMonth';
+
+  return 'earlier';
+}
+
+export const TIME_BUCKET_LABELS: Record<string, string> = {
+  today: '今天',
+  yesterday: '昨天',
+  thisWeek: '本周',
+  thisMonth: '本月',
+  earlier: '更早',
+};
+
+export const TIME_BUCKET_ORDER = ['today', 'yesterday', 'thisWeek', 'thisMonth', 'earlier'] as const;
+
+export function groupByTimeBucket<T>(items: T[], getTimestamp: (item: T) => string | undefined): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const key of TIME_BUCKET_ORDER) groups.set(key, []);
+  for (const item of items) {
+    const ts = getTimestamp(item);
+    const key = ts ? getTimeBucketKey(ts) : 'earlier';
+    groups.get(key)!.push(item);
+  }
+  return groups;
+}
+
+export function getRemainingDayBucket(remainingDays: number): string {
+  if (remainingDays <= 1) return '1天内';
+  if (remainingDays <= 3) return '3天内';
+  if (remainingDays <= 7) return '7天内';
+  return '7天以上';
+}
+
+export const REMAINING_BUCKET_ORDER = ['1天内', '3天内', '7天内', '7天以上'];
+
