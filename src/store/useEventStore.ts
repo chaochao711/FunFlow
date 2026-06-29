@@ -21,9 +21,6 @@ export interface TaskEvent {
   updatedAt: string;        // 最后编辑时间
   // 排序
   order: number;            // 全局排序，越小越靠前
-  // 软删除
-  deleted: boolean;         // 是否已删除
-  deletedAt?: string;       // 删除时间
   // 扩展字段
   metadata?: Record<string, any>;
 }
@@ -63,7 +60,6 @@ export const useEventStore = create<EventStore>()(
           ...event,
           order: event.order ?? 0,
           updatedAt: now,
-          deleted: false,
         }, ...updated] });
       },
 
@@ -78,15 +74,10 @@ export const useEventStore = create<EventStore>()(
       },
 
       deleteEvent: (id) => {
-        // 软删除：标记 deleted=true 而非移除
+        // 硬删除：直接从数组中移除（事件无回收站，无需软删除）
         useSyncStore.getState().markEventDirty(id);
-        const now = new Date().toISOString();
         set((state) => ({
-          events: state.events.map((e) =>
-            e.id === id
-              ? { ...e, deleted: true, deletedAt: now, updatedAt: now }
-              : e
-          ),
+          events: state.events.filter((e) => e.id !== id),
         }));
       },
 
@@ -111,7 +102,7 @@ export const useEventStore = create<EventStore>()(
         const evts = get().events;
         if (!Array.isArray(evts)) return [];
         return evts
-          .filter((e) => e.taskId === taskId && !e.deleted)
+          .filter((e) => e.taskId === taskId)
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       },
 

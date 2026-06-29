@@ -245,7 +245,7 @@ export default function EventTimeline({
 
                           {isCompletion && event.estimatedTime && (
                             <p className="text-xs text-zinc-400 mt-0.5">
-                              ⏱️ 预计 {event.estimatedTime} 完成
+                              ⏱️ 预计 {formatEstimatedTime(event.estimatedTime)} 完成
                             </p>
                           )}
 
@@ -261,4 +261,15 @@ export default function EventTimeline({
       })}
     </div>
   );
+}
+
+/** 格式化预计完成时间：从 "2026-06-29T14:30" 转为 "06-29 14:30" */
+function formatEstimatedTime(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${mm}-${dd} ${hh}:${mi}`;
 }

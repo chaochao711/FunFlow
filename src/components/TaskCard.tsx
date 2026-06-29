@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, CheckCircle, Circle, PlayCircle, Archive, Trash2, Edit3, RotateCcw, CircleCheck } from 'lucide-react';
+import { Calendar, CheckCircle, Circle, PlayCircle, Archive, Trash2, Edit3, RotateCcw, CircleCheck, X } from 'lucide-react';
 import { Task, Tag, useTaskStore } from '../store/useTaskStore';
 import { getTagDisplay, getTagColorClass } from '../utils/tagUtils';
 import { formatDateOnly } from '../utils/dateUtils';
@@ -244,12 +244,19 @@ export default function TaskCard({
                   }}
                   className={`p-1.5 rounded-lg transition-all ${
                     confirmingDelete
-                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 scale-110'
+                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
                       : 'text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30'
                   }`}
-                  title="移至回收站"
+                  title={confirmingDelete ? '点击确认删除' : '移至回收站'}
                 >
-                  {confirmingDelete ? '确认删除？' : <Trash2 size={16} />}
+                  <motion.div
+                    key={confirmingDelete ? 'confirm' : 'trash'}
+                    initial={{ scale: 0.6, rotate: -90 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                  >
+                    {confirmingDelete ? <X size={16} /> : <Trash2 size={16} />}
+                  </motion.div>
                 </button>
               </>
             ) : (
@@ -288,12 +295,19 @@ export default function TaskCard({
                   }}
                   className={`p-1.5 rounded-lg transition-all ${
                     confirmingDelete
-                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/30 scale-110'
+                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
                       : 'text-zinc-500 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-600'
                   }`}
-                  title="删除"
+                  title={confirmingDelete ? '点击确认删除' : '删除'}
                 >
-                  {confirmingDelete ? '确认删除？' : <Trash2 size={16} />}
+                  <motion.div
+                    key={confirmingDelete ? 'confirm' : 'trash'}
+                    initial={{ scale: 0.6, rotate: -90 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+                  >
+                    {confirmingDelete ? <X size={16} /> : <Trash2 size={16} />}
+                  </motion.div>
                 </button>
               </>
             )}
@@ -301,12 +315,12 @@ export default function TaskCard({
         </div>
 
         {task.description && (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-2 ml-9 line-clamp-2">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-2 ml-8 line-clamp-2">
             {task.description}
           </p>
         )}
 
-        <div className="flex items-center flex-wrap gap-2 mt-3 ml-9">
+        <div className="flex items-center flex-wrap gap-2 mt-3 ml-8">
           {/* 优先级选择器 */}
           <div className="relative inline-block translate-y-[3px]">
             <motion.div
@@ -396,7 +410,7 @@ export default function TaskCard({
           className="overflow-hidden"
         >
           <div className="border-t border-zinc-100 dark:border-zinc-800" />
-          <div className="px-4 pb-3 pt-2 ml-9">
+          <div className="px-4 pb-3 pt-2 ml-8">
             {taskEvents.length === 0 ? (
               <p className="text-xs text-zinc-400 py-1">暂无事件</p>
             ) : (

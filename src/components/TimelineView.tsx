@@ -121,7 +121,7 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
                               </h4>
                               {/* 事件数量徽章 */}
                               {(() => {
-                                const ec = events.filter(e => e.taskId === task.id && !e.deleted).length;
+                                const ec = events.filter(e => e.taskId === task.id).length;
                                 if (ec === 0) return null;
                                 return (
                                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 font-medium flex items-center gap-0.5">
@@ -187,7 +187,7 @@ export default function TimelineView({ tasks = [], onTaskClick }: TimelineViewPr
                           {/* 事件子时间线 */}
                           {(() => {
                             const taskEvents = events
-                              .filter(e => e.taskId === task.id && !e.deleted)
+                              .filter(e => e.taskId === task.id)
                               .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
                             if (taskEvents.length === 0) {
                               if (!task.archived && isHovered) {

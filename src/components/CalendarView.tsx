@@ -25,9 +25,9 @@ interface CalendarViewProps {
 type ViewMode = 'dayGridMonth' | 'timeGridWeek' | 'timeGridDay';
 
 const statusColors: Record<string, string> = {
-  pending: '#6b7280',
-  'in-progress': '#3b82f6',
-  completed: '#22c55e',
+  pending: '#f97316',      // orange-500（与任务卡片一致）
+  'in-progress': '#3b82f6', // blue-500
+  completed: '#22c55e',     // green-500
 };
 
 const priorityConfig: Record<string, { icon: string; label: string }> = {
@@ -56,6 +56,7 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const panelTaskIdRef = useRef<string | null>(null);
   const catchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSwitchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMouseInPanelRef = useRef(false);
   const isMouseOnEventRef = useRef(false); // 鼠标是否仍在 FullCalendar 事件条上
 
@@ -63,6 +64,7 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
     if (showTimerRef.current) { clearTimeout(showTimerRef.current); showTimerRef.current = null; }
     if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
     if (catchTimerRef.current) { clearTimeout(catchTimerRef.current); catchTimerRef.current = null; }
+    if (pendingSwitchRef.current) { clearTimeout(pendingSwitchRef.current); pendingSwitchRef.current = null; }
   };
 
   // ── 事件鼠标进出：悬停 150ms 弹出面板；面板仅在鼠标离开事件条 AND 面板时隐藏 ──
@@ -88,21 +90,26 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
 
     const rect = info.el.getBoundingClientRect();
 
-    // 当前面板正在显示另一个任务 → 先隐藏，动画结束后再显示新面板
+    // 当前面板正在显示另一个任务 → 不立即切换，停留 800ms 后才切换
+    // 避免鼠标移向面板途中经过其他任务导致面板误切
     if (panelTaskIdRef.current !== null) {
-      clearTimers();
-      setShowPanel(false);
-      setPanelTask(null);
-      panelTaskIdRef.current = null;
-      isMouseInPanelRef.current = false;
-      const newTask = task;
-      showTimerRef.current = setTimeout(() => {
-        setPanelPos({ x: rect.left + rect.width / 2, y: rect.bottom });
-        setPanelTask(newTask);
-        setShowPanel(true);
-	        showTimerRef.current = null;
-        panelTaskIdRef.current = newTask.id;
-      }, 220); // framer-motion exit 动画 150ms + 缓冲
+      if (pendingSwitchRef.current) {
+        clearTimeout(pendingSwitchRef.current);
+      }
+      pendingSwitchRef.current = setTimeout(() => {
+        pendingSwitchRef.current = null;
+        setShowPanel(false);
+        setPanelTask(null);
+        panelTaskIdRef.current = null;
+        isMouseInPanelRef.current = false;
+        showTimerRef.current = setTimeout(() => {
+          setPanelPos({ x: rect.left + rect.width / 2, y: rect.bottom });
+          setPanelTask(task);
+          setShowPanel(true);
+          showTimerRef.current = null;
+          panelTaskIdRef.current = task.id;
+        }, 150);
+      }, 300);
       return;
     }
 
@@ -124,6 +131,12 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
   const handleEventMouseLeave = useCallback(() => {
     isMouseOnEventRef.current = false;
 
+    // 鼠标离开事件 → 取消 pending 切换
+    if (pendingSwitchRef.current) {
+      clearTimeout(pendingSwitchRef.current);
+      pendingSwitchRef.current = null;
+    }
+
     if (showTimerRef.current) {
       // 面板还没弹出 → 取消
       clearTimeout(showTimerRef.current);
@@ -133,7 +146,7 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
       return;
     }
 
-    // 面板已弹出 → 启动 1.5s 关闭倒计时
+    // 面板已弹出 → 启动 300ms 关闭倒计时
     if (panelTaskIdRef.current) {
       if (catchTimerRef.current) clearTimeout(catchTimerRef.current);
       catchTimerRef.current = setTimeout(() => {
@@ -143,15 +156,16 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
           setPanelTask(null);
           panelTaskIdRef.current = null;
         }
-      }, 1500);
+      }, 300);
     }
   }, []);
 
-  // ── 面板鼠标进出：面板的唯一隐藏途径 ──
+  // ── 面板鼠标进出 ──
   const handlePanelMouseEnter = useCallback(() => {
     isMouseInPanelRef.current = true;
     if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
     if (catchTimerRef.current) { clearTimeout(catchTimerRef.current); catchTimerRef.current = null; }
+    if (pendingSwitchRef.current) { clearTimeout(pendingSwitchRef.current); pendingSwitchRef.current = null; }
   }, []);
 
   const handlePanelMouseLeave = useCallback(() => {
@@ -289,7 +303,7 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
 
   // 面板定位：根据实际事件数估算高度，优先下方 → 溢出则上翻 → 两侧都溢出则 clamp
   const panelEventCount = panelTask ? allEvents.filter(e => e.taskId === panelTask.id).length : 0;
-  const estimatedPanelH = Math.min(140 + panelEventCount * 36, 320);
+  const estimatedPanelH = Math.min(140 + panelEventCount * 36, 400);
   const { left: panelX, top: panelY } = clampPanelPosition(panelPos.x, panelPos.y, 360, estimatedPanelH);
 
   return (
@@ -321,12 +335,12 @@ export default function CalendarView({ tasks, tags, onTaskClick }: CalendarViewP
       <AnimatePresence>
         {showPanel && panelTask && (
           <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.96 }}
-            transition={{ duration: 0.15 }}
-            className="fixed z-[100] w-[360px] bg-white dark:bg-zinc-800 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden"
-            style={{ left: panelX, top: panelY }}
+            initial={{ opacity: 0, y: -12, scaleY: 0.9 }}
+            animate={{ opacity: 1, y: 0, scaleY: 1 }}
+            exit={{ opacity: 0, y: -12, scaleY: 0.9 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="fixed z-[100] w-[360px] bg-white dark:bg-zinc-800 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden max-h-[calc(100vh-16px)]"
+            style={{ left: panelX, top: panelY, transformOrigin: 'top center' }}
             onMouseEnter={handlePanelMouseEnter}
             onMouseLeave={handlePanelMouseLeave}
           >
@@ -512,29 +526,23 @@ export function clampPanelPosition(
   const GAP = 4;
   const MARGIN = 8;
 
+  const clampLeft = Math.max(MARGIN, Math.min(anchorX - panelW / 2, vw - panelW - MARGIN * 2));
+
+  // 所有路径最终保证 panel 底部不超出视口
+  const clampBottom = (t: number) => Math.min(t, vh - estimatedPanelH - MARGIN);
+
   // 1) 优先放在事件条下方
   const belowTop = anchorY + GAP;
   if (belowTop + estimatedPanelH <= vh - MARGIN) {
-    // 下方空间充足 → 放下方
-    return {
-      left: Math.max(MARGIN, Math.min(anchorX - panelW / 2, vw - panelW - MARGIN * 2)),
-      top: belowTop,
-    };
+    return { left: clampLeft, top: belowTop };
   }
 
   // 2) 下方溢出 → 尝试上翻到事件条上方
   const aboveTop = anchorY - estimatedPanelH - GAP;
   if (aboveTop >= MARGIN) {
-    // 上方空间充足 → 放上方
-    return {
-      left: Math.max(MARGIN, Math.min(anchorX - panelW / 2, vw - panelW - MARGIN * 2)),
-      top: aboveTop,
-    };
+    return { left: clampLeft, top: aboveTop };
   }
 
-  // 3) 两侧都溢出 → 下方显示 + clamp 到视口底部（面板内容区自带 scroll）
-  return {
-    left: Math.max(MARGIN, Math.min(anchorX - panelW / 2, vw - panelW - MARGIN * 2)),
-    top: Math.max(MARGIN, Math.min(belowTop, vh - estimatedPanelH - MARGIN)),
-  };
+  // 3) 两侧都溢出 → 下方显示 + 强制 clamp 到视口内
+  return { left: clampLeft, top: Math.max(MARGIN, clampBottom(belowTop)) };
 }

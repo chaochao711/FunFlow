@@ -173,18 +173,14 @@ export const useTaskStore = create<TaskStore>()(
       deleteTask: (id) => {
         useSyncStore.getState().markTaskDirty(id);
 
-        // 级联：该任务的所有事件软删除
+        // 级联：该任务的所有事件硬删除
         const now = new Date().toISOString();
         const { events, setEvents } = useEventStore.getState();
-        const taskEvents = events.filter(e => e.taskId === id && !e.deleted);
+        const taskEvents = events.filter(e => e.taskId === id);
         if (taskEvents.length > 0) {
           const eventIds = taskEvents.map(e => e.id);
           useSyncStore.getState().markEventsDirty(eventIds);
-          const eventMap = new Map(events.map(e => [e.id, e]));
-          for (const eId of eventIds) {
-            eventMap.set(eId, { ...eventMap.get(eId)!, deleted: true, deletedAt: now, updatedAt: now });
-          }
-          setEvents(Array.from(eventMap.values()));
+          setEvents(events.filter(e => e.taskId !== id));
         }
 
         return set((state) => ({
@@ -203,20 +199,6 @@ export const useTaskStore = create<TaskStore>()(
 
       restoreTask: (id) => {
         useSyncStore.getState().markTaskDirty(id);
-
-        // 级联：该任务的所有事件恢复
-        const now = new Date().toISOString();
-        const { events, setEvents } = useEventStore.getState();
-        const taskEvents = events.filter(e => e.taskId === id && e.deleted);
-        if (taskEvents.length > 0) {
-          const eventIds = taskEvents.map(e => e.id);
-          useSyncStore.getState().markEventsDirty(eventIds);
-          const eventMap = new Map(events.map(e => [e.id, e]));
-          for (const eId of eventIds) {
-            eventMap.set(eId, { ...eventMap.get(eId)!, deleted: false, deletedAt: undefined, updatedAt: now });
-          }
-          setEvents(Array.from(eventMap.values()));
-        }
 
         return set((state) => ({
           tasks: state.tasks.map((task) =>
@@ -309,20 +291,6 @@ export const useTaskStore = create<TaskStore>()(
 
       restoreToArchive: (id) => {
         useSyncStore.getState().markTaskDirty(id);
-
-        // 级联：该任务的所有事件恢复
-        const now = new Date().toISOString();
-        const { events, setEvents } = useEventStore.getState();
-        const taskEvents = events.filter(e => e.taskId === id && e.deleted);
-        if (taskEvents.length > 0) {
-          const eventIds = taskEvents.map(e => e.id);
-          useSyncStore.getState().markEventsDirty(eventIds);
-          const eventMap = new Map(events.map(e => [e.id, e]));
-          for (const eId of eventIds) {
-            eventMap.set(eId, { ...eventMap.get(eId)!, deleted: false, deletedAt: undefined, updatedAt: now });
-          }
-          setEvents(Array.from(eventMap.values()));
-        }
 
         return set((state) => ({
           tasks: state.tasks.map((task) =>
@@ -478,10 +446,33 @@ export const useTaskStore = create<TaskStore>()(
 
       deletePerson: (id) => {
         useSyncStore.getState().markPersonDirty(id);
-        return set((state) => ({
-          people: state.people.filter((p) => p.id !== id),
-          // 不同步清理任务中的 createdBy/assignedTo 文本引用
-        }));
+        return set((state) => {
+          const person = state.people.find(p => p.id === id);
+          if (!person) return { people: state.people.filter((p) => p.id !== id) };
+
+          const name = person.name;
+          const nick = person.nickname;
+          const dirtyTasks: string[] = [];
+
+          const updatedTasks = state.tasks.map(t => {
+            let changed = false;
+            let cb = t.createdBy;
+            let ab = t.assignedTo;
+            if (cb === name || (nick && cb === nick)) { cb = undefined; changed = true; }
+            if (ab === name || (nick && ab === nick)) { ab = undefined; changed = true; }
+            if (changed) dirtyTasks.push(t.id);
+            return changed ? { ...t, createdBy: cb, assignedTo: ab, updatedAt: new Date().toISOString() } : t;
+          });
+
+          if (dirtyTasks.length > 0) {
+            setTimeout(() => useSyncStore.getState().markTasksDirty(dirtyTasks), 0);
+          }
+
+          return {
+            people: state.people.filter((p) => p.id !== id),
+            tasks: updatedTasks,
+          };
+        });
       },
 
       movePerson: (dragId, targetId, position) =>

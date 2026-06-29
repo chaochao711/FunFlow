@@ -81,11 +81,13 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags, select
 
   const getTagTaskCount = (tagId: string) => tasks.filter(task => task.tags?.includes(tagId) && !task.archived && !task.deleted).length;
   const getSubTagCount = (tagId: string) => tags.filter(t => t.parentId === tagId).length;
-  const getPersonTaskCount = (person: Person) => tasks.filter(task =>
-    !task.archived && !task.deleted &&
-    (task.createdBy === person.name || task.createdBy === person.nickname ||
-     task.assignedTo === person.name || task.assignedTo === person.nickname)
-  ).length;
+  const getPersonTaskCount = (person: Person) => tasks.filter(task => {
+    if (task.archived || task.deleted) return false;
+    const cb = task.createdBy;
+    const ab = task.assignedTo;
+    return (cb && (cb === person.name || cb === person.nickname)) ||
+           (ab && (ab === person.name || ab === person.nickname));
+  }).length;
 
   const handleEditTag = (tag: Tag) => {
     setShowEditTag({ id: tag.id, name: tag.name, type: tag.colorType, emoji: tag.emoji, color: tag.color });
@@ -116,10 +118,13 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags, select
 
   const handleDeletePersonClick = (personId: string, name: string) => {
     const person = people.find(p => p.id === personId);
-    const taskCount = person ? tasks.filter(task => !task.archived && !task.deleted &&
-      (task.createdBy === person.name || task.createdBy === person.nickname ||
-       task.assignedTo === person.name || task.assignedTo === person.nickname)
-    ).length : 0;
+    const taskCount = person ? tasks.filter(task => {
+      if (task.archived || task.deleted) return false;
+      const cb = task.createdBy;
+      const ab = task.assignedTo;
+      return (cb && (cb === person.name || cb === person.nickname)) ||
+             (ab && (ab === person.name || ab === person.nickname));
+    }).length : 0;
     setShowDeletePersonConfirm({ id: personId, name, taskCount });
   };
 
@@ -343,7 +348,7 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags, select
           {showDeletePersonConfirm.taskCount > 0 && (
             <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
               <p className="text-sm text-amber-700 dark:text-amber-400">
-                ⚠️ 当前有 <strong>{showDeletePersonConfirm.taskCount}</strong> 个活跃任务引用了此人员，删除后这些任务中的引用将保留但不再关联此人员。
+                ⚠️ 当前有 <strong>{showDeletePersonConfirm.taskCount}</strong> 个活跃任务引用了此人员，删除后这些任务中的引用将被同步清除。
               </p>
             </div>
           )}
@@ -386,7 +391,7 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags, select
               ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400'
               : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
           }`}
-          style={{ paddingLeft: level * 16 + 24 }}
+          style={{ paddingLeft: level * 16 + 16 }}
         >
           {/* 拖拽把手 — 绝对定位不占空间 */}
           <div className="absolute left-0 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity px-1 z-10">
@@ -398,7 +403,9 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags, select
             </button>
           ) : <div className="w-3.5 mr-1 flex-shrink-0" />}
           <button onClick={() => onTagToggle(tag.id)} className="flex items-center gap-1 flex-1 min-w-0 text-left">
-            {tag.colorType === 'emoji' ? <span className="text-sm flex-shrink-0">{tag.emoji}</span> : <div className={`w-2 h-2 rounded-full flex-shrink-0 ${COLOR_OPTIONS.find(c => c.name === tag.color)?.class}`} />}
+            {tag.colorType === 'emoji'
+              ? <span className="inline-flex items-center justify-center w-4 h-4 flex-shrink-0 text-sm">{tag.emoji}</span>
+              : <span className={`inline-flex items-center justify-center w-4 h-4 flex-shrink-0`}><span className={`block w-2 h-2 rounded-full ${COLOR_OPTIONS.find(c => c.name === tag.color)?.class}`} /></span>}
             <span className="text-sm leading-snug truncate">{tag.name}</span>
             {taskCount > 0 && <span className="text-xs text-zinc-400 ml-0.5 flex-shrink-0">({taskCount})</span>}
           </button>
@@ -443,7 +450,7 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags, select
             const classes = `group relative flex items-center justify-between py-1.5 rounded-lg cursor-move transition-all ${getDropIndicatorClass(person.id, 'before', dragOverPersonId, personDropPosition)} ${getDropIndicatorClass(person.id, 'after', dragOverPersonId, personDropPosition)} ${getDropIndicatorClass(person.id, 'inside', dragOverPersonId, personDropPosition)} ${selectedPersons.includes(person.id) ? 'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400' : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`;
             return classes;
           })()}
-          style={{ paddingLeft: 24 }}
+          style={{ paddingLeft: 16 }}
         >
           {/* 拖拽把手 — 绝对定位不占空间 */}
           <div className="absolute left-0 top-1/2 -translate-y-1/2 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity px-1 z-10">

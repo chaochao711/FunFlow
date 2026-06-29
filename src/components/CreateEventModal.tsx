@@ -78,7 +78,6 @@ export default function CreateEventModal({
         timestamp: new Date().toISOString(),
         estimatedTime: type === 'completion' ? (estimatedTime.trim() || undefined) : undefined,
         updatedAt: new Date().toISOString(),
-        deleted: false,
         order: 0,
       });
     }
@@ -145,7 +144,7 @@ export default function CreateEventModal({
                 placeholder={type === 'completion' ? '完成节点描述...' : '事件内容...'}
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                rows={3}
+                rows={8}
                 className="w-full p-3 border border-zinc-200 dark:border-zinc-700 rounded-xl mb-4 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white resize-none focus:outline-none focus:ring-2 focus:ring-violet-500"
                 autoFocus
               />

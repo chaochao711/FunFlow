@@ -85,7 +85,7 @@ describe('buildCalendarEvents', () => {
 
     it('按状态着色', () => {
       const cases: Array<[string, string]> = [
-        ['pending', '#6b7280'],
+        ['pending', '#f97316'],
         ['in-progress', '#3b82f6'],
         ['completed', '#22c55e'],
       ];

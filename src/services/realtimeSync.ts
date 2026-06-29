@@ -35,6 +35,9 @@ export function subscribeToRealtime(userId: string) {
         const deletedId = (payload.old as any)?.task_id;
         if (deletedId) {
           setTasks(tasks.filter((t) => t.id !== deletedId));
+          // 级联删除关联的事件（任务已被永久删除）
+          const { events, setEvents } = useEventStore.getState();
+          setEvents(events.filter((e) => e.taskId !== deletedId));
         }
         return;
       }
@@ -118,6 +121,14 @@ export function subscribeToRealtime(userId: string) {
 
       const incoming = dbEventToApp(payload.new);
       const existing = events.find((e) => e.id === incoming.id);
+
+      // 兼容旧版软删除：收到 deleted=true 的 upsert 视为删除信号
+      if ((payload.new as any)?.deleted === true) {
+        if (existing) {
+          setEvents(events.filter((e) => e.id !== incoming.id));
+        }
+        return;
+      }
 
       // 用 updatedAt 比较避免回环（编辑时 updatedAt 会变）
       if (existing) {

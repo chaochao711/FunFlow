@@ -38,7 +38,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
     archiveTask,
     deleteTask,
   } = useTaskStore();
-  const { addEvent, events: allEvents, toggleEventComplete, updateEvent } = useEventStore();
+  const { addEvent, events: allEvents, toggleEventComplete, updateEvent, getEventsByTask } = useEventStore();
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -620,7 +620,7 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
                           setEditEvent(evt);
                         }}
                         allTasks={tasks}
-                        taskEvents={allEvents.filter(e => e.taskId === task.id && !e.deleted)}
+                        taskEvents={getEventsByTask(task.id)}
                         keepTimelineOpen={(editEvent?.taskId ?? (showCreateEventModal ? eventTaskId : null)) === task.id}
                       />
                     ))

@@ -7,11 +7,11 @@ import { useTaskStore, Person } from './store/useTaskStore';
 import { useEventStore } from './store/useEventStore';
 import { useSyncStore } from './store/useSyncStore';
 import { setPersistUserId } from './store/persistStorage';
-import { loadTasksFromCloud, loadTagsFromCloud, loadPeopleFromCloud, syncTasksToCloud, syncTagsToCloud, syncPeopleToCloud } from './services/syncService';
+import { loadTasksFromCloud, loadTagsFromCloud, loadPeopleFromCloud, loadTrashFromCloud, syncTasksToCloud, syncTagsToCloud, syncPeopleToCloud } from './services/syncService';
 import { loadEventsFromCloud, syncEventsToCloud } from './services/eventSyncService';
 import { recoverInvalidTags } from './utils/recoverInvalidTags';
 import { subscribeToRealtime } from './services/realtimeSync';
-import { purgeExpiredTrash } from './services/syncService';
+import { purgeExpiredTrash, TRASH_RETENTION_DAYS } from './services/syncService';
 import MainPage from './views/MainPage';
 import ArchivePage from './views/ArchivePage';
 import TrashPage from './views/TrashPage';
@@ -110,12 +110,30 @@ function App() {
     }
   };
 
+  /** 清理本地超过 7 天的已删除任务（防止 localStorage 无限增长） */
+  const purgeLocalExpiredTrash = () => {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - TRASH_RETENTION_DAYS);
+    const cutoffStr = cutoffDate.toISOString();
+
+    // 清理过期已删除任务
+    const { tasks, setTasks } = useTaskStore.getState();
+    const keptTasks = tasks.filter(t => !(t.deleted && t.deletedAt && t.deletedAt < cutoffStr));
+    if (keptTasks.length !== tasks.length) {
+      setTasks(keptTasks);
+      console.log(`🧹 本地清理 ${tasks.length - keptTasks.length} 个过期已删除任务`);
+    }
+  };
+
   const loadUserData = async (userId: string) => {
     if (!userId) return;
 
     // 切到当前用户的 persist scope，从 scoped key 重新加载本地数据
     setPersistUserId(userId);
     rehydrateFromScopedKey(userId);
+
+    // 本地过期回收站清理（超过 7 天的软删除数据）
+    purgeLocalExpiredTrash();
 
     try {
       const [cloudTasks, cloudTags, cloudPeople] = await Promise.all([
@@ -138,6 +156,16 @@ function App() {
       const finalTags = recoverInvalidTags(mergedTasks, cloudTags);
       setTasks(mergedTasks);
       setTags(finalTags);
+
+      // 加载云端回收站任务，标记本地的已删除状态
+      try {
+        const cloudTrash = await loadTrashFromCloud(userId);
+        if (cloudTrash.length > 0) {
+          useTaskStore.getState().mergeTrashTasks(cloudTrash);
+        }
+      } catch (err) {
+        console.warn('加载云端回收站失败:', err);
+      }
 
       // People 合并：同 updatedAt 仲裁
       const localPeople = useTaskStore.getState().people;
