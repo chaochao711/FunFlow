@@ -410,7 +410,7 @@ export default function TaskCard({
           className="overflow-hidden"
         >
           <div className="border-t border-zinc-100 dark:border-zinc-800" />
-          <div className="px-4 pb-3 pt-2 ml-8">
+          <div className="px-4 pb-3 pt-2">
             {taskEvents.length === 0 ? (
               <p className="text-xs text-zinc-400 py-1">暂无事件</p>
             ) : (

@@ -1,7 +1,7 @@
 // src/views/MainPage.tsx — 主视图（列表 + 日历）
 
 import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import {
   Plus, Search, Sun, Moon, Sparkles, Filter, X,
   Archive, Trash2, Menu, Settings
@@ -51,6 +51,13 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
   const [sortBy, setSortBy] = useState<'status' | 'dueDate' | 'priority' | 'created'>('status');
   const [regexError, setRegexError] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'timeline'>('list');
+  const [viewDir, setViewDir] = useState(1);
+  const VIEW_ORDER = ['list', 'calendar', 'timeline'];
+  const switchView = (v: 'list' | 'calendar' | 'timeline') => {
+    if (v === viewMode) return;
+    setViewDir(VIEW_ORDER.indexOf(v) - VIEW_ORDER.indexOf(viewMode));
+    setViewMode(v);
+  };
   const [showCreateEventModal, setShowCreateEventModal] = useState(false);
   const [eventTaskId, setEventTaskId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -260,8 +267,8 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900 transition-colors duration-300">
       {/* 主视图头部 */}
-      <header className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-200 dark:border-zinc-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-30 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-lg border-b border-zinc-200 dark:border-zinc-800 h-14 flex items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between gap-4 w-full">
           {/* 左侧：菜单按钮 + Logo */}
           <div className="flex items-center gap-3">
             <button
@@ -348,38 +355,30 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
           <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
             {/* 工具栏：视图切换 + 归档/回收站入口 */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <LayoutGroup>
               <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl p-1">
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    viewMode === 'list'
-                      ? 'bg-white dark:bg-zinc-700 text-violet-600 dark:text-violet-400 shadow'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                  }`}
-                >
-                  📋 列表视图
-                </button>
-                <button
-                  onClick={() => setViewMode('calendar')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    viewMode === 'calendar'
-                      ? 'bg-white dark:bg-zinc-700 text-violet-600 dark:text-violet-400 shadow'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                  }`}
-                >
-                  📅 日历视图
-                </button>
-                <button
-                  onClick={() => setViewMode('timeline')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    viewMode === 'timeline'
-                      ? 'bg-white dark:bg-zinc-700 text-violet-600 dark:text-violet-400 shadow'
-                      : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700'
-                  }`}
-                >
-                  📊 时间线
-                </button>
+                {(['list', 'calendar', 'timeline'] as const).map(v => (
+                  <button
+                    key={v}
+                    onClick={() => switchView(v)}
+                    className={`px-4 py-1.5 rounded-lg text-sm font-medium relative transition-colors ${
+                      viewMode === v
+                        ? 'text-violet-600 dark:text-violet-400'
+                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                    }`}
+                  >
+                    {viewMode === v && (
+                      <motion.div
+                        layoutId="view-bg"
+                        className="absolute inset-0 bg-white dark:bg-zinc-700 rounded-lg shadow"
+                        transition={{ type: 'spring', stiffness: 450, damping: 28 }}
+                      />
+                    )}
+                    <span className="relative">{v === 'list' ? '📋 列表视图' : v === 'calendar' ? '📅 日历视图' : '📊 时间线'}</span>
+                  </button>
+                ))}
               </div>
+              </LayoutGroup>
 
               {/* 筛选指示 — 视图切换按钮右侧 */}
               {hasActiveFilters && (
@@ -464,19 +463,24 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
               </div>
             </div>
 
+            <AnimatePresence mode="popLayout">
             {viewMode === 'timeline' ? (
+              <motion.div key="timeline" initial={{ opacity: 0, x: 20 * viewDir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 * viewDir }} transition={{ opacity: { duration: 0.15 }, x: { type: 'spring', stiffness: 300, damping: 28 } }}>
               <TimelineView
                 tasks={filteredTasks}
                 onTaskClick={(taskId) => setSelectedTask(taskId)}
               />
+              </motion.div>
             ) : viewMode === 'calendar' ? (
+              <motion.div key="calendar" initial={{ opacity: 0, x: 20 * viewDir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 * viewDir }} transition={{ opacity: { duration: 0.15 }, x: { type: 'spring', stiffness: 300, damping: 28 } }}>
               <CalendarView
                 tasks={filteredTasks}
                 tags={tags}
                 onTaskClick={(taskId) => setSelectedTask(taskId)}
               />
+              </motion.div>
             ) : (
-              <>
+              <motion.div key="list" initial={{ opacity: 0, x: 20 * viewDir }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 * viewDir }} transition={{ opacity: { duration: 0.15 }, x: { type: 'spring', stiffness: 300, damping: 28 } }}>
                 <QuickStats
                   filterStatus={filterStatus}
                   setFilterStatus={setFilterStatus}
@@ -626,8 +630,9 @@ export default function MainPage({ isDark, onToggleTheme }: MainPageProps) {
                     ))
                   )}
                 </div>
-              </>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
         </main>
       </div>

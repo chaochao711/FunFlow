@@ -177,119 +177,121 @@ export default function Sidebar({ selectedTags, onTagToggle, onClearTags, select
 
   // ========== 渲染 ==========
 
-  if (!sidebarOpen) {
-    return (
-      <div className="fixed left-0 top-14 bottom-0 w-16 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-r border-zinc-200 dark:border-zinc-800 z-20">
-        <button onClick={toggleSidebar} className="w-full p-4 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-          <ChevronRight size={20} className="text-zinc-600 dark:text-zinc-400" />
-        </button>
-      </div>
-    );
-  }
-
   return (
     <Fragment>
-    <div className="fixed left-0 top-14 bottom-0 w-72 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-r border-zinc-200 dark:border-zinc-800 z-20 overflow-y-auto">
-      {/* 顶部 Logo */}
-      <div className="sticky top-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 p-4 flex items-center justify-between z-10">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">🐟</span>
-          <span className="font-bold text-lg text-zinc-900 dark:text-white">FunFlow</span>
-        </div>
-        <button onClick={toggleSidebar} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg">
-          <ChevronLeft size={18} />
+    <motion.div
+      animate={{ width: sidebarOpen ? 288 : 64 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+      className="fixed left-0 top-14 bottom-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-r border-zinc-200 dark:border-zinc-800 z-30 overflow-hidden"
+    >
+      {/* 折叠/展开按钮 */}
+      <div className={sidebarOpen ? 'flex justify-end pt-3 pr-2' : 'flex justify-center pt-3'}>
+        <button onClick={toggleSidebar} className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+          {sidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
         </button>
       </div>
 
-      {/* Tab 切换 */}
-      <div className="flex border-b border-zinc-200 dark:border-zinc-800">
-        <button
-          onClick={() => setActiveTab('tags')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
-            activeTab === 'tags'
-              ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-500'
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
-          }`}
-        >
-          <Tags size={14} /> 标签
-        </button>
-        <button
-          onClick={() => setActiveTab('people')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
-            activeTab === 'people'
-              ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-500'
-              : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
-          }`}
-        >
-          <Users size={14} /> 人员
-        </button>
-      </div>
-
-      <div className="p-4">
-        {/* ===== 标签面板 ===== */}
-        {activeTab === 'tags' && (
-          <>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">标签筛选</h3>
-              <div className="flex gap-1">
-                {selectedTags.length > 0 && (
-                  <button onClick={onClearTags} className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 px-2 py-1 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20">
-                    清除
-                  </button>
-                )}
-                <button
-                  onClick={() => { setNewTagParentId(null); setShowAddTag(true); }}
-                  className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
-                  title="新建顶级标签"
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.12 }}
+            className="overflow-y-auto h-[calc(100%-40px)]"
+          >
+            {/* Tab 切换 */}
+            <div className="sticky top-0 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b border-zinc-200 dark:border-zinc-800 z-10 flex relative">
+              <button
+                onClick={() => setActiveTab('tags')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'tags'
+                    ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-500'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                }`}
+              >
+                <Tags size={14} /> 标签
+              </button>
+              <button
+                onClick={() => setActiveTab('people')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-medium transition-colors ${
+                  activeTab === 'people'
+                    ? 'text-violet-600 dark:text-violet-400 border-b-2 border-violet-500'
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'
+                }`}
+              >
+                <Users size={14} /> 人员
+              </button>
             </div>
 
-            <div className="space-y-0.5">
-              {tagTree.map(tag => renderTagItem(tag, 0))}
-            </div>
+            <div className="p-4">
+              {/* ===== 标签面板 ===== */}
+              {activeTab === 'tags' && (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">标签筛选</h3>
+                    <div className="flex gap-1">
+                      {selectedTags.length > 0 && (
+                        <button onClick={onClearTags} className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 px-2 py-1 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20">
+                          清除
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setNewTagParentId(null); setShowAddTag(true); }}
+                        className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                        title="新建顶级标签"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  </div>
 
-            {tags.length === 0 && (
-              <p className="text-sm text-zinc-400 text-center py-8">暂无标签，点击 + 创建</p>
-            )}
-          </>
+                  <div className="space-y-0.5">
+                    {tagTree.map(tag => renderTagItem(tag, 0))}
+                  </div>
+
+                  {tags.length === 0 && (
+                    <p className="text-sm text-zinc-400 text-center py-8">暂无标签，点击 + 创建</p>
+                  )}
+                </>
+              )}
+
+              {/* ===== 人员面板 ===== */}
+              {activeTab === 'people' && (
+                <>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">人员管理</h3>
+                    <div className="flex gap-1">
+                      {selectedPersons.length > 0 && (
+                        <button onClick={onClearPersons} className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 px-2 py-1 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20">
+                          清除
+                        </button>
+                      )}
+                      <button
+                        onClick={handleAddPerson}
+                        className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
+                        title="新建人员"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-0.5">
+                    {sortedPeople.map(person => renderPersonItem(person))}
+                  </div>
+
+                  {people.length === 0 && (
+                    <p className="text-sm text-zinc-400 text-center py-8">暂无人员，点击 + 创建</p>
+                  )}
+                </>
+              )}
+            </div>
+          </motion.div>
         )}
+      </AnimatePresence>
+    </motion.div>
 
-        {/* ===== 人员面板 ===== */}
-        {activeTab === 'people' && (
-          <>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">人员管理</h3>
-              <div className="flex gap-1">
-                {selectedPersons.length > 0 && (
-                  <button onClick={onClearPersons} className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-700 px-2 py-1 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/20">
-                    清除
-                  </button>
-                )}
-                <button
-                  onClick={handleAddPerson}
-                  className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg"
-                  title="新建人员"
-                >
-                  <Plus size={14} />
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-0.5">
-              {sortedPeople.map(person => renderPersonItem(person))}
-            </div>
-
-            {people.length === 0 && (
-              <p className="text-sm text-zinc-400 text-center py-8">暂无人员，点击 + 创建</p>
-            )}
-          </>
-        )}
-      </div>
-
-    </div>  {/* 关闭侧边栏容器 */}
     <CreateTagModal
       isOpen={showAddTag}
       onClose={() => setShowAddTag(false)}
